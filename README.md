@@ -76,6 +76,62 @@ This processes the example data from `examples/0/` and saves visualizations to `
 You can follow the official instructions from the original RoboTwin-2.0 repository:  
 [https://robotwin-platform.github.io/doc/usage/robotwin-install.html](https://robotwin-platform.github.io/doc/usage/robotwin-install.html)
 
+
+In summary:
+
+1. 
+```bash
+sudo apt install libvulkan1 mesa-vulkan-drivers vulkan-tools
+```
+
+2. 
+```bash
+git clone https://github.com/RoboTwin-Platform/RoboTwin.git && cd RoboTwin
+```
+
+3. modify script/requirements.txt 
+```bash
+transforms3d==0.4.2
+sapien==3.0.0b1
+scipy==1.10.1
+mplib==0.2.1
+gymnasium==0.29.1
+trimesh==4.4.3
+open3d==0.18.0
+imageio==2.34.2
+pydantic
+zarr
+openai
+huggingface_hub==0.36.2
+h5py
+# For Description Generation
+azure==4.0.0
+azure-ai-inference
+pyglet<2
+wandb
+moviepy
+imageio
+termcolor
+av
+matplotlib
+ffmpeg
+```
+
+4. modify line 8 of script/_install.sh:
+```bash
+pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable" --no-build-isolation
+```
+
+5. run:
+```bash
+bash script/_install.sh
+```
+
+6. run:
+```bash
+bash script/_download_assets.sh
+```
+
  **Deploying the Inference Server**
 ```bash
 # single GPU
@@ -312,4 +368,4 @@ This work builds upon several excellent open-source projects:
 For questions, discussions, or collaborations:
 
 - **Issues**: Open an [issue](https://github.com/robbyant/lingbot-va/issues) on GitHub
-- **Email**: Contact Dr. [Qihang Zhang](https://zqh0253.github.io/) (liuhuan.zqh@antgroup.com) or Dr. Lin Li (fengchang.ll@antgroup.com) 
+- **Email**: Contact Dr. [Qihang Zhang](https://zqh0253.github.io/) (liuhuan.zqh@antgroup.com) or Dr. [Lin Li](https://lilin-hitcrt.github.io/) (fengchang.ll@antgroup.com) 

@@ -27,7 +27,7 @@ from datetime import datetime
 import importlib
 import argparse
 import pdb
-from geometry import euler2quat
+from evaluation.robotwin.geometry import euler2quat
 import numpy as np
 
 from description.utils.generate_episode_instructions import *
@@ -37,11 +37,24 @@ import imageio
 import numpy as np
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
-from lerobot.datasets.utils import write_json
+import json
 from pathlib import Path
 
 from evaluation.robotwin.websocket_client_policy import WebsocketClientPolicy
-from test_render import Sapien_TEST
+from evaluation.robotwin.test_render import Sapien_TEST
+
+def write_json(data: dict, fpath: Path) -> None:
+    """Write data to a JSON file.
+
+    Creates parent directories if they don't exist.
+
+    Args:
+        data (dict): The dictionary to write.
+        fpath (Path): The path to the output JSON file.
+    """
+    fpath.parent.mkdir(exist_ok=True, parents=True)
+    with open(fpath, "w") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
 def add_title_bar(img, text, font_scale=0.8, thickness=2):
     """Add a black title bar with text above the image"""

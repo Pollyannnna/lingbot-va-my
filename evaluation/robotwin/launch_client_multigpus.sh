@@ -58,7 +58,7 @@ for i in "${!task_names[@]}"; do
     echo -e "\033[33m[Task $i] Task: ${task_name}, GPU: ${gpu_id}, PORT: ${port}, Log: ${log_file}\033[0m"
 
     PYTHONWARNINGS=ignore::UserWarning \
-    XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 python evaluation/robotwin/eval_polict_client_openpi.py --config policy/$policy_name/deploy_policy.yml \
+    XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 python -m evaluation.robotwin.eval_polict_client_openpi --config policy/$policy_name/deploy_policy.yml \
         --overrides \
         --task_name ${task_name} \
         --task_config ${task_config} \
