@@ -16,10 +16,10 @@ if [ $# -ne 0 ]; then
     overrides="$*"
 fi
 
-export WANDB_API_KEY=local-d988485fe1400fab0af9fa256ae49e8738af1532
-export WANDB_BASE_URL=http://33.180.4.104
-export WANDB_TEAM_NAME=video-action-world-modeling
-export WANDB_PROJECT=debug-lilin
+export WANDB_API_KEY="your key"
+export WANDB_BASE_URL="your url"
+export WANDB_TEAM_NAME="your team name"
+export WANDB_PROJECT="your project"
 
 ## node setting
 num_gpu=${NGPU}
