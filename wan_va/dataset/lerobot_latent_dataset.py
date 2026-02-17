@@ -1,21 +1,18 @@
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.utils import load_jsonlines, load_json
+from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.datasets.utils import get_episode_data_index
+from lerobot.datasets.compute_stats import aggregate_stats, compute_episode_stats
 import numpy as np
 from pathlib import Path
 from collections.abc import Callable
-from copy import deepcopy
 import os
 from tqdm import tqdm
-import random
-from multiprocessing import Pool, get_context
+from multiprocessing import Pool
 from functools import partial
-from collections.abc import Callable
 import torch
-import itertools
 from einops import rearrange
-from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
-import gc
+from torch.utils.data import DataLoader
 from scipy.spatial.transform import Rotation as R
+from lerobot.constants import HF_LEROBOT_HOME
 
 def recursive_find_file(directory, filename='info.json'):
     result = []
@@ -113,19 +110,36 @@ class LatentLeRobotDataset(LeRobotDataset):
         repo_id,
         config=None,
     ):
-        super().__init__(
-            repo_id,
-            None,
-            None,
-            None,
-            None,
-            1e-4,
-            None,
-            False,
-            True,
-            'pyav',
-            1,
+        self.repo_id = repo_id
+        self.root = HF_LEROBOT_HOME / repo_id
+        self.image_transforms = None
+        self.delta_timestamps = None
+        self.episodes = None
+        self.tolerance_s = 1e-4
+        self.revision = "v2.1"
+        self.video_backend = 'pyav'
+        self.delta_indices = None
+        self.batch_encoding_size = 1
+        self.episodes_since_last_encoding = 0
+        self.image_writer = None
+        self.episode_buffer = None
+        self.root.mkdir(exist_ok=True, parents=True)
+        self.meta = LeRobotDatasetMetadata(
+            self.repo_id, self.root, self.revision, force_cache_sync=False
         )
+        if self.episodes is not None and self.meta._version >= packaging.version.parse("v2.1"):
+            episodes_stats = [self.meta.episodes_stats[ep_idx] for ep_idx in self.episodes]
+            self.stats = aggregate_stats(episodes_stats)
+        
+        try:
+            assert all((self.root / fpath).is_file() for fpath in self.get_episodes_file_paths())
+            self.hf_dataset = self.load_hf_dataset()
+        except (AssertionError, FileNotFoundError, NotADirectoryError):
+            self.revision = get_safe_version(self.repo_id, self.revision)
+            self.download_episodes(download_videos)
+            self.hf_dataset = self.load_hf_dataset()
+        self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
+        
         self.latent_path = Path(repo_id) / 'latents'
         self.empty_emb = torch.load(config.empty_emb_path, weights_only=False)
         self.config = config

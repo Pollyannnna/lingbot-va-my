@@ -27,6 +27,7 @@ https://github.com/user-attachments/assets/cec7b7a6-953b-4fa4-8f1a-47efc1fce547
 - **Long-Horizon Performance and Generalization**: High improvements in sample efficiency, long-horizon success rates, and generalization to novel scenes.
 
 # 🚀 News
+- **[2026-02-17]** Post-training code and dataset released! Support fine-tuning LingBot-VA on custom robotic manipulation datasets.
 - **[2026-01-29]** Weights and code for shared backbone released! Please stay tuned for our separated version!
 
 
@@ -43,6 +44,12 @@ https://github.com/user-attachments/assets/cec7b7a6-953b-4fa4-8f1a-47efc1fce547
 | :--- | :--- | :--- | :--- |
 | lingbot-va-base &nbsp; | [🤗 robbyant/lingbot-va-base &nbsp;](https://huggingface.co/robbyant/lingbot-va-base) | [🤖 Robbyant/lingbot-va-base &nbsp;](https://modelscope.cn/models/Robbyant/lingbot-va-base)  | LingBot-VA w/ shared backbone|
 | lingbot-va-posttrain-robotwin &nbsp; | [🤗 robbyant/lingbot-va-posttrain-robotwin &nbsp;](https://huggingface.co/robbyant/lingbot-va-posttrain-robotwin) | [🤖 Robbyant/lingbot-va-posttrain-robotwin &nbsp;](https://modelscope.cn/models/Robbyant/lingbot-va-posttrain-robotwin)  | LingBot-VA-Posttrain-Robotwin w/ shared backbone|
+
+- **Post-Training Dataset**
+
+| Dataset Name | Repository | Description |
+| :--- | :--- | :--- |
+| robotwin-clean-and-aug-lerobot &nbsp; | [🤗 robbyant/robotwin-clean-and-aug-lerobot](https://huggingface.co/datasets/robbyant/robotwin-clean-and-aug-lerobot) | Cleaned & augmented RoboTwin dataset in LeRobot format for post-training |
 ---
 
 # 🛠️ Quick Start
@@ -86,7 +93,7 @@ sudo apt install libvulkan1 mesa-vulkan-drivers vulkan-tools
 
 2. 
 ```bash
-git clone https://github.com/RoboTwin-Platform/RoboTwin.git && cd RoboTwin
+git clone https://github.com/RoboTwin-Platform/RoboTwin.git && cd RoboTwin && git checkout 2eeec322
 ```
 
 3. modify script/requirements.txt 
@@ -162,9 +169,35 @@ It is important to note that the inference server and client must be deployed on
 We also provide a script for image to video-action generation:
 
 ```bash
-NGPU=1 CONFIG_NAME='robotwin_i2av' bash script/run_launch_va_server_sync.sh 
+NGPU=1 CONFIG_NAME='robotwin_i2av' bash script/run_launch_va_server_sync.sh
 ```
 
+
+## Post-Training LingBot-VA
+
+We support post-training (fine-tuning) LingBot-VA on custom robotic manipulation datasets. The training pipeline uses FSDP for distributed training and integrates with [LeRobot](https://github.com/huggingface/lerobot) dataset format.
+
+### Additional Dependencies
+
+On top of the base installation, post-training requires:
+
+```bash
+pip install lerobot==0.3.3 scipy wandb --no-deps
+```
+
+### Data Preparation
+
+Download the post-training dataset from HuggingFace:
+
+```bash
+huggingface-cli download --repo-type dataset robbyant/robotwin-clean-and-aug-lerobot --local-dir /path/to/your/dataset
+```
+
+### Training
+
+```bash
+NGPU=8 bash script/run_va_posttrain.sh
+```
 
 
 ---
