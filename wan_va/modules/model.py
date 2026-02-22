@@ -101,6 +101,7 @@ class FlexAttnFunc(nn.Module):
         patch_size,
         device,
     ):
+        torch._inductor.config.realize_opcount_threshold = 100
         B, _, L_F, L_H, L_W = latent_shape
         _, _, A_F, A_H, A_W = action_shape
 
