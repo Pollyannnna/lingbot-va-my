@@ -210,7 +210,33 @@ huggingface-cli download --repo-type dataset robbyant/robotwin-clean-and-aug-ler
 
 ### Custom Dataset Preparation
 
-If you want to fine-tune LingBot-VA on your own robotic manipulation data, follow these three steps:
+If you want to fine-tune LingBot-VA on your own robotic manipulation data, follow these steps:
+
+#### Data Pipeline Overview
+
+When preparing your custom dataset, the data goes through the following processing pipeline:
+
+1. **Raw Data** → Convert to LeRobot format (with metadata and video files)
+2. **Add Action Segmentation** → Add `action_config` to `episodes.jsonl`
+3. **Extract Latents** → Process videos through VAE according to video specifications
+4. **Dataset Loading** → Load processed data with proper action dimensions for training
+
+The final data should conform to these specifications:
+
+**Action Format:**
+- Output dimension: **30 dimensions**, structured as follows:
+  - Left arm EEF (end-effector): 7 dimensions
+  - Right arm EEF (end-effector): 7 dimensions
+  - Left arm joints: 7 dimensions
+  - Right arm joints: 7 dimensions
+  - Left arm gripper: 1 dimension
+  - Right arm gripper: 1 dimension
+- In your dataset class loader, map your robot's action dimensions to this standard 30-dimensional format. Missing dimensions are padded with **0**.
+
+**Video Format:**
+- During VAE latent extraction, resize videos to **~256 × 256 pixels** and downsample to **5-15 fps** as a reference (adjust based on your task requirements).
+
+#### Implementation Steps
 
 **Step 1: Convert your data to LeRobot format**
 
@@ -290,6 +316,8 @@ The latent file naming convention `episode_{index}_{start_frame}_{end_frame}.pth
 ```bash
 NGPU=8 bash script/run_va_posttrain.sh
 ```
+
+For better training performance, use a larger global batch size (e.g., 32, 64). If you have limited GPU resources, you can increase `gradient_accumulation_steps` to achieve a larger effective batch size.
 
 
 ---
