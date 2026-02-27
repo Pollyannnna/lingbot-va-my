@@ -237,8 +237,11 @@ class LatentLeRobotDataset(LeRobotDataset):
                                  h=latent_height, 
                                  w=latent_width)
             latent_lst.append(latent)
-        wrist_latent = torch.cat(latent_lst[1:], dim=2)
-        cat_latent = torch.cat([wrist_latent, latent_lst[0]], dim=1)
+        if self.config.env_type == 'robotwin_tshape':
+            wrist_latent = torch.cat(latent_lst[1:], dim=2)
+            cat_latent = torch.cat([wrist_latent, latent_lst[0]], dim=1)
+        else:
+            cat_latent = torch.cat(latent_lst, dim=2)
 
         text_emb = data_dict[f"{self.used_video_keys[0]}.text_emb"]
         if torch.rand(1).item() < self.cfg_prob:
@@ -254,9 +257,10 @@ class LatentLeRobotDataset(LeRobotDataset):
         act_shift = int(latent_frame_ids[0] - local_start_frame)
         frame_stride = latent_frame_ids[1] - latent_frame_ids[0]
         action = action[act_shift:]
-        left_action = get_relative_pose(action[:, :7])
-        right_action = get_relative_pose(action[:, 8:15])
-        action = np.concatenate([left_action, action[:, 7:8], right_action, action[:, 15:16]], axis=1)
+        if self.config.env_type == 'robotwin_tshape': ## TODO support get_relative_pose for other dataset, currently only support robotwin 
+            left_action = get_relative_pose(action[:, :7])
+            right_action = get_relative_pose(action[:, 8:15])
+            action = np.concatenate([left_action, action[:, 7:8], right_action, action[:, 15:16]], axis=1)
         action = np.pad(action, pad_width=((frame_stride * 4, 0), (0, 0)), mode='constant', constant_values=0)
 
         latent_frame_num = (len(latent_frame_ids) - 1) // 4 + 1
@@ -310,7 +314,7 @@ if __name__ == '__main__':
     from wan_va.configs import VA_CONFIGS
     from tqdm import tqdm
     dset = MultiLatentLeRobotDataset(
-        VA_CONFIGS['robotwin_train']
+        VA_CONFIGS['demo_train']
     )
     for key, value in dset[0].items():
         if isinstance(value, torch.Tensor):
