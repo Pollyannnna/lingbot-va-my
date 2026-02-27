@@ -216,6 +216,14 @@ huggingface-cli download --repo-type dataset robbyant/robotwin-clean-and-aug-ler
 
 If you want to fine-tune LingBot-VA on your own robotic manipulation data, follow these steps:
 
+#### Example Dataset
+
+We provide a converted example dataset based on data from [Issue #29](https://github.com/Robbyant/lingbot-va/issues/29). This dataset has been converted into the expected format and is fully supported for training. You can download it to understand the required data structure:
+
+- **Download**: [Example Dataset](https://drive.google.com/file/d/1D52nK4ZOJmWBXKv1nWrLb9YBwq8nKa_b/view?usp=sharing)
+
+This example can serve as a reference for converting your own robotic manipulation data into the proper format.
+
 #### Data Pipeline Overview
 
 When preparing your custom dataset, the data goes through the following processing pipeline:
