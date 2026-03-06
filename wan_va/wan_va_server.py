@@ -1,4 +1,6 @@
 # Copyright 2024-2025 The Robbyant Team Authors. All rights reserved.
+# Toggle debug saving of obs/latents/actions .pt files (set True to re-enable)
+ENABLE_DEBUG_SAVE = False
 import argparse
 import os
 import sys
@@ -41,7 +43,7 @@ from utils import (
 class VA_Server:
 
     def __init__(self, job_config):
-        self.cache_name = 'pos'
+        self.cache_name = 'pos' 
         self.job_config = job_config
         self.save_root = job_config.save_root
         self.dtype = job_config.param_dtype
@@ -221,7 +223,7 @@ class VA_Server:
         return latents
 
     def preprocess_action(self, action):
-        action_model_input = torch.from_numpy(action)
+        action_model_input = torch.from_numpy(action) # 把 NumPy 数组转成 PyTorch 张量
         CA, FA, HA = action_model_input.shape  # C, F, H
         action_model_input_paded = F.pad(action_model_input,
                                          [0, 0, 0, 0, 0, 1],
@@ -229,11 +231,11 @@ class VA_Server:
                                          value=0)
 
         action_model_input = action_model_input_paded[
-            self.job_config.inverse_used_action_channel_ids]
+            self.job_config.inverse_used_action_channel_ids] # 挑选有用的动作通道
 
         if self.action_norm_method == 'quantiles':
             action_model_input = (action_model_input - self.actions_q01) / (
-                self.actions_q99 - self.actions_q01 + 1e-6) * 2. - 1.
+                self.actions_q99 - self.actions_q01 + 1e-6) * 2. - 1. # 归一化到 [-1, 1]
         else:
             raise NotImplementedError
         return action_model_input.unsqueeze(0).unsqueeze(-1)  # B, C, F, H, W
@@ -242,13 +244,13 @@ class VA_Server:
         action = action.cpu()  # B, C, F, H, W
 
         action = action[0, ..., 0]  #C, F, H
-        if self.action_norm_method == 'quantiles':
+        if self.action_norm_method == 'quantiles': # 反归一化（还原成真实单位）
             action = (action + 1) / 2 * (self.actions_q99 - self.actions_q01 +
                                          1e-6) + self.actions_q01
         else:
             raise NotImplementedError
         action = action.squeeze(0).detach().cpu().numpy()
-        return action[self.job_config.used_action_channel_ids]
+        return action[self.job_config.used_action_channel_ids] # 提取被接线的 16 个有效通道
     
     def _repeat_input_for_cfg(self, input_dict):
         if self.use_cfg:
@@ -268,7 +270,7 @@ class VA_Server:
                               action_t=0,
                               latent_cond=None,
                               action_cond=None,
-                              frame_st_id=0,
+                              frame_st_id=0,  # 当前是第几帧（用于位置序列）
                               patch_size=(1, 2, 2)):
         logger.info(f"FRAME START ID: {frame_st_id}")
         input_dict = dict()
@@ -322,18 +324,18 @@ class VA_Server:
         return input_dict
 
     def _encode_obs(self, obs):
-        images = obs['obs']
+        images = obs['obs'] # 获取 3 个摄像头的原始画面
         if not isinstance(images, list):
             images = [images]
         if len(images) < 1:
             return None
         videos = []
-        for k_i, k in enumerate(self.job_config.obs_cam_keys):
+        for k_i, k in enumerate(self.job_config.obs_cam_keys): # 遍历 3 个摄像头
             if self.env_type == 'robotwin_tshape':
                 if k_i == 0:  # camera high
-                    height_i, width_i = self.height, self.width
+                    height_i, width_i = self.height, self.width #主视角 (cam_high)：保持原大（320x256）
                 else:
-                    height_i, width_i = self.height // 2, self.width // 2
+                    height_i, width_i = self.height // 2, self.width // 2 # 侧视/底视：缩一半（160x128）
             else:
                 height_i, width_i = self.height, self.width
 
@@ -347,13 +349,13 @@ class VA_Server:
             videos.append(history_video_k)
 
         if self.env_type == 'robotwin_tshape':
-            videos_high = videos[0] / 255.0 * 2.0 - 1.0
+            videos_high = videos[0] / 255.0 * 2.0 - 1.0 # 归一化到 [-1, 1]
             videos_left_and_right = torch.cat(videos[1:],
                                               dim=0) / 255.0 * 2.0 - 1.0
             vae_device = next(self.streaming_vae.vae.parameters()).device
-            enc_out_high = self.streaming_vae.encode_chunk(
+            enc_out_high = self.streaming_vae.encode_chunk(# 压缩主视角
                 videos_high.to(vae_device).to(self.dtype))
-            enc_out_left_and_right = self.streaming_vae_half.encode_chunk(
+            enc_out_left_and_right = self.streaming_vae_half.encode_chunk(# 压缩左右手视角
                 videos_left_and_right.to(vae_device).to(self.dtype))
             enc_out = torch.cat([
                 torch.cat(enc_out_left_and_right.split(1, dim=0), dim=-1),
@@ -375,7 +377,7 @@ class VA_Server:
 
     def _reset(self, prompt=None):
         logger.info('Reset.')
-        self.use_cfg = (self.job_config.guidance_scale > 1) or (self.job_config.action_guidance_scale > 1)
+        self.use_cfg = (self.job_config.guidance_scale > 1) or (self.job_config.action_guidance_scale > 1) # 决定是否开启正负指令引导
         #### Reset all parameters
         self.frame_st_id = 0
         self.init_latent = None
@@ -450,22 +452,22 @@ class VA_Server:
                               frame_chunk_size,
                               self.latent_height,
                               self.latent_width,
-                              device=self.device,
+                              device=self.device, #随机噪声
                               dtype=self.dtype)
         actions = torch.randn(1,
                               self.job_config.action_dim,
                               frame_chunk_size,
                               self.action_per_frame,
                               1,
-                              device=self.device,
+                              device=self.device, #随机噪声
                               dtype=self.dtype)
 
         video_inference_step = self.job_config.num_inference_steps
         action_inference_step = self.job_config.action_num_inference_steps
         video_step = self.job_config.video_exec_step
 
-        self.scheduler.set_timesteps(video_inference_step)
-        self.action_scheduler.set_timesteps(action_inference_step)
+        self.scheduler.set_timesteps(video_inference_step) #videogen步数
+        self.action_scheduler.set_timesteps(action_inference_step) #actiongen步数 动作一般更多
         timesteps = self.scheduler.timesteps
         action_timesteps = self.action_scheduler.timesteps
 
@@ -485,7 +487,8 @@ class VA_Server:
                 torch.no_grad(),
         ):
             # 1. Video Generation Loop
-            for i, t in enumerate(tqdm(timesteps)):
+            _t_video_start = time.time()
+            for i, t in enumerate(tqdm(timesteps)): # 遍历 videogen 步数
                 last_step = i == len(timesteps) - 1
                 latent_cond = init_latent[:, :, 0:1].to(
                     self.dtype) if frame_st_id == 0 else None
@@ -499,27 +502,29 @@ class VA_Server:
                     frame_st_id=frame_st_id)
 
                 video_noise_pred = self.transformer(
-                    self._repeat_input_for_cfg(input_dict['latent_res_lst']),
-                    update_cache=1 if last_step else 0,
+                    self._repeat_input_for_cfg(input_dict['latent_res_lst']), # 视频 token
+                    update_cache=1 if last_step else 0, # 当视频去噪进行到最后一步更新缓存
                     cache_name=self.cache_name,
                     action_mode=False)
 
-                if not last_step or video_step != -1:
+                if not last_step or video_step != -1: # 不是最后一步，或者设置了 video_step
                     video_noise_pred = data_seq_to_patch(
                         self.job_config.patch_size, video_noise_pred,
                         frame_chunk_size, self.latent_height,
                         self.latent_width, batch_size=2 if self.use_cfg else 1)
-                    if self.job_config.guidance_scale > 1:
+                    if self.job_config.guidance_scale > 1: # 引导系数大于1
                         video_noise_pred = video_noise_pred[1:] + self.job_config.guidance_scale * (video_noise_pred[:1] - video_noise_pred[1:])
                     else:
                         video_noise_pred = video_noise_pred[:1]
-                    latents = self.scheduler.step(video_noise_pred,
+                    latents = self.scheduler.step(video_noise_pred, # 视频噪声预测
                                                   t,
                                                   latents,
                                                   return_dict=False)
 
                 latents[:, :, 0:1] = latent_cond if frame_st_id == 0 else latents[:, :, 0:1]
+            _t_video_ms = (time.time() - _t_video_start) * 1000
 
+            _t_action_start = time.time()
             for i, t in enumerate(tqdm(action_timesteps)):
                 last_step = i == len(action_timesteps) - 1
                 action_cond = torch.zeros(
@@ -558,32 +563,42 @@ class VA_Server:
                                                          return_dict=False)
 
                 actions[:, :, 0:1] = action_cond if frame_st_id == 0 else actions[:, :, 0:1]
+            _t_action_ms = (time.time() - _t_action_start) * 1000
 
-        actions[:, ~self.action_mask] *= 0
+        self._last_infer_timing = {
+            'video_denoise_ms': round(_t_video_ms, 2),
+            'action_denoise_ms': round(_t_action_ms, 2),
+            'video_steps': len(timesteps),
+            'action_steps': len(action_timesteps),
+        }
 
-        save_async(latents, os.path.join(self.exp_save_root, f'latents_{frame_st_id}.pt'))
-        save_async(actions, os.path.join(self.exp_save_root, f'actions_{frame_st_id}.pt'))
+        actions[:, ~self.action_mask] *= 0# 没接线的通道强制归零，防止乱动
 
-        actions = self.postprocess_action(actions)
+        if ENABLE_DEBUG_SAVE:
+            save_async(latents, os.path.join(self.exp_save_root, f'latents_{frame_st_id}.pt'))
+            save_async(actions, os.path.join(self.exp_save_root, f'actions_{frame_st_id}.pt'))
+
+        actions = self.postprocess_action(actions)# 把 -1~1 的数字变回真实的控制指令
         torch.cuda.empty_cache()
-        return actions, latents
+        return actions, latents, self._last_infer_timing
 
     def _compute_kv_cache(self, obs):
         ### optional async save obs for debug
-        self.transformer.clear_pred_cache(self.cache_name)
-        save_async(obs['obs'], os.path.join(self.exp_save_root, f'obs_data_{self.frame_st_id}.pt'))
-        latent_model_input = self._encode_obs(obs)
+        self.transformer.clear_pred_cache(self.cache_name) # 清掉刚才脑补出来的“虚假”记忆
+        if ENABLE_DEBUG_SAVE:
+            save_async(obs['obs'], os.path.join(self.exp_save_root, f'obs_data_{self.frame_st_id}.pt')) # 保存真实观测
+        latent_model_input = self._encode_obs(obs) # 编码真实观测
         if self.frame_st_id == 0:
             latent_model_input = torch.cat(
                 [self.init_latent, latent_model_input],
-                dim=2) if latent_model_input is not None else self.init_latent
+                dim=2) if latent_model_input is not None else self.init_latent  
 
-        action_model_input = self.preprocess_action(obs['state'])
-        action_model_input = action_model_input.to(latent_model_input)
+        action_model_input = self.preprocess_action(obs['state']) # 获取机器人当前的关节角度
+        action_model_input = action_model_input.to(latent_model_input) # 动作输入和隐变量输入保持一致
         logger.info(
             f"get KV cache obs: {latent_model_input.shape} {action_model_input.shape}"
         )
-        input_dict = self._prepare_latent_input(latent_model_input,
+        input_dict = self._prepare_latent_input(latent_model_input, #给上面这些“视觉+动作”信号贴上对应的时间戳和坐标 ID。
                                                 action_model_input,
                                                 frame_st_id=self.frame_st_id)
 
@@ -591,39 +606,66 @@ class VA_Server:
                 torch.no_grad(),
         ):
             self.transformer(self._repeat_input_for_cfg(input_dict['latent_res_lst']),
-                             update_cache=2,
+                             update_cache=2, #模式 2 表示“纯存储历史”
                              cache_name=self.cache_name,
-                             action_mode=False)
+                             action_mode=False)# 存入视频记忆
 
             self.transformer(self._repeat_input_for_cfg(input_dict['action_res_lst']),
                              update_cache=2,
                              cache_name=self.cache_name,
-                             action_mode=True)
+                             action_mode=True)# 存入action记忆
         torch.cuda.empty_cache()
-        self.frame_st_id += latent_model_input.shape[2]
+        self.frame_st_id += latent_model_input.shape[2]# 记住现在已经处理到第几帧了
 
     @torch.no_grad()
     def infer(self, obs):
-        reset = obs.get('reset', False)
-        prompt = obs.get('prompt', None)
-        compute_kv_cache = obs.get('compute_kv_cache', False)
+        reset = obs.get('reset', False) # 是否需要切换任务？
+        prompt = obs.get('prompt', None) # 新任务的文字描述
+        compute_kv_cache = obs.get('compute_kv_cache', False) # 是否需要缓存？
 
-        if reset:
+        if reset: # 如果是 True，说明是新任务，需要清空记忆并重新开始
             logger.info(f"******************* Reset server ******************")
             self._reset(prompt=prompt)
             return dict()
-        elif compute_kv_cache:
+        elif compute_kv_cache: # 如果是 True，说明需要缓存
             logger.info(
                 f"################# Compute KV Cache #################")
+            _t_kv_start = time.time()
             self._compute_kv_cache(obs)
-            return dict()
-        else:
+            _t_kv_ms = (time.time() - _t_kv_start) * 1000
+            return dict(server_timing={"kv_cache_ms": round(_t_kv_ms, 2)})
+        else: # 正常推理流程
             logger.info(f"################# Infer One Chunk #################")
-            action, _ = self._infer(obs, frame_st_id=self.frame_st_id)
-            return dict(action=action)
+            action, latents, infer_timing = self._infer(obs, frame_st_id=self.frame_st_id)
+            # Decode latents to video frames for client visualization
+            save_visualization = obs.get('save_visualization', False)
+            result = dict(action=action)
+            vae_decode_ms = 0.0
+            if save_visualization:
+                self.video_processor = getattr(self, 'video_processor', None) or VideoProcessor(vae_scale_factor=1)
+                if self.enable_offload:
+                    self.vae = self.vae.to(self.device)
+                _t_vae = time.time()
+                video = self.decode_one_video(latents, 'np')[0]  # (F, H, W, 3) np array
+                vae_decode_ms = round((time.time() - _t_vae) * 1000, 2)
+                if self.enable_offload:
+                    self.vae = self.vae.to('cpu')
+                    torch.cuda.empty_cache()
+                result['video'] = video
+            # Include detailed per-phase timing for client logging
+            result['server_timing'] = {
+                'infer_ms': round(infer_timing['video_denoise_ms'] + infer_timing['action_denoise_ms'], 2),
+                'video_denoise_ms': infer_timing['video_denoise_ms'],
+                'action_denoise_ms': infer_timing['action_denoise_ms'],
+                'vae_decode_ms': vae_decode_ms,
+                'video_steps': infer_timing['video_steps'],
+                'action_steps': infer_timing['action_steps'],
+            }
+            return result
+
     
-    def decode_one_video(self, latents, output_type):
-        latents = latents.to(self.vae.dtype)
+    def decode_one_video(self, latents, output_type): #在生成 Demo 视频有用
+        latents = latents.to(self.vae.dtype)# 再次反归一化，把信号调成 VAE 认识的幅度
         latents_mean = (
             torch.tensor(self.vae.config.latents_mean)
             .view(1, self.vae.config.z_dim, 1, 1, 1)
@@ -633,8 +675,8 @@ class VA_Server:
             latents.device, latents.dtype
         )
         latents = latents / latents_std + latents_mean
-        video = self.vae.decode(latents, return_dict=False)[0]
-        video = self.video_processor.postprocess_video(video, output_type=output_type)
+        video = self.vae.decode(latents, return_dict=False)[0]# 调用 VAE 解压
+        video = self.video_processor.postprocess_video(video, output_type=output_type)# 图像后处理（去噪、锐化等）
         return video
     
     def load_init_obs(self):
@@ -644,7 +686,7 @@ class VA_Server:
         return init_obs
     
     @torch.no_grad()
-    def generate(self):
+    def generate(self): #这通常用于本地测试，不需要连接机器人
         self.video_processor = VideoProcessor(vae_scale_factor=1)
         self._reset(self.job_config.prompt)
         init_obs = self.load_init_obs()
@@ -692,7 +734,7 @@ def run(args):
         model.generate()
     elif config.infer_mode == 'server':
         logger.info(f"******************************USE Server mode******************************")
-        run_async_server_mode(model, local_rank, config.host, port)
+        run_async_server_mode(model, local_rank, config.host, port) #开启网络监听，等别人发图片过来
     else:
         raise ValueError(f"Unknown infer mode: {config.infer_mode}")
 

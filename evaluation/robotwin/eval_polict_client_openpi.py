@@ -6,7 +6,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import cv2
 from pathlib import Path
 
-robowin_root = Path("/path/to/your/robowin")
+robowin_root = Path("/data/250010187/yeziyang1/RoboTwin")
 if str(robowin_root) not in sys.path:
     sys.path.insert(0, str(robowin_root))
 
@@ -191,69 +191,143 @@ def visualize_action_step(action_history, step_idx, window=50):
     return img
 
 
-def save_comparison_video(real_obs_list, imagined_video, action_history, save_path, fps=15):
+def _split_tshape_frame(img_frame):
+    """Split a T-shape decoded frame into 3 individual camera views.
+    
+    The T-shape layout from VAE decode is:
+    ┌──────────┬──────────┐
+    │ cam_left │ cam_right│  (top 1/3 of height, full width)
+    ├──────────┴──────────┤
+    │      cam_high       │  (bottom 2/3 of height, full width)
+    └─────────────────────┘
+    
+    Returns: (cam_high, cam_left, cam_right) as individual numpy arrays
+    """
+    h, w = img_frame.shape[:2]
+    # Top 1/3 = left_wrist | right_wrist (each half width)
+    # Bottom 2/3 = cam_high (full width)
+    top_h = h // 3       # 128 for 384-tall frame
+    cam_left = img_frame[:top_h, :w//2]
+    cam_right = img_frame[:top_h, w//2:]
+    cam_high = img_frame[top_h:]
+    return cam_high, cam_left, cam_right
+
+
+def _build_chunk_frame_map(gen_video_list, chunk_obs_counts):
+    """Build a mapping from real observation index → (chunk_id, imagined_frame_idx).
+    
+    For each chunk c:
+      - gen_video_list[c] has F_img decoded frames
+      - chunk_obs_counts[c] has N_obs real observation frames
+      - Real obs frames in this chunk are stretched to cover F_img imagined frames
+    """
+    frame_map = []  # list of (chunk_id, img_frame_idx) for each real obs frame
+    for c, n_obs in enumerate(chunk_obs_counts):
+        if c < len(gen_video_list):
+            f_img = len(gen_video_list[c])
+        else:
+            f_img = 0
+        for local_i in range(n_obs):
+            if f_img > 0:
+                # Proportionally map local real frame index to imagined frame index
+                img_idx = min(int(local_i / n_obs * f_img), f_img - 1)
+                frame_map.append((c, img_idx))
+            else:
+                frame_map.append((c, -1))
+    return frame_map
+
+
+def save_comparison_video(real_obs_list, imagined_video, action_history, save_path,
+                          fps=10, chunk_obs_counts=None):
     if not real_obs_list:
         return
 
     n_real = len(real_obs_list)
-    if imagined_video is not None:
-        imagined_video = np.concatenate(imagined_video, 0)
-        n_imagined = len(imagined_video) 
+    gen_video_list = imagined_video  # keep as list-of-arrays (one per chunk)
+
+    # Build chunk-aware frame mapping
+    if gen_video_list is not None and chunk_obs_counts is not None:
+        frame_map = _build_chunk_frame_map(gen_video_list, chunk_obs_counts)
+        n_mapped = len(frame_map)
+        total_imagined = sum(len(v) for v in gen_video_list)
     else:
-        n_imagined = 0
-    n_frames = n_real # Based on real observation frames
-    
-    print(f"Saving video: Real {n_real} frames, Imagined {n_imagined} frames...")
+        frame_map = None
+        n_mapped = 0
+        total_imagined = 0
+
+    print(f"Saving video: Real {n_real} frames, Imagined {total_imagined} frames "
+          f"({len(gen_video_list) if gen_video_list else 0} chunks), "
+          f"mapped {n_mapped} entries")
 
     final_frames = []
+    fixed_frame_size = None
 
-    for i in range(n_frames):
+    def resize_h(img, h):
+        if img.shape[0] != h:
+            w = int(img.shape[1] * h / img.shape[0])
+            img = cv2.resize(img, (w, h))
+        img = np.ascontiguousarray(img)
+        if img.dtype != np.uint8:
+            img = (img * 255).astype(np.uint8)
+        return img
+
+    for i in range(n_real):
         obs = real_obs_list[i]
         cam_high = obs["observation.images.cam_high"]
         cam_left = obs["observation.images.cam_left_wrist"]
         cam_right = obs["observation.images.cam_right_wrist"]
 
         base_h = cam_high.shape[0]
-        
-        def resize_h(img, h):
-            if img.shape[0] != h:
-                w = int(img.shape[1] * h / img.shape[0])
-                img = cv2.resize(img, (w, h))
-            img = np.ascontiguousarray(img)
-            if img.dtype != np.uint8:
-                img = (img * 255).astype(np.uint8)
-            return img
 
         row_real = np.hstack([
-            resize_h(cam_high, base_h), 
-            resize_h(cam_left, base_h), 
+            resize_h(cam_high, base_h),
+            resize_h(cam_left, base_h),
             resize_h(cam_right, base_h)
         ])
-        
         row_real = np.ascontiguousarray(row_real)
-
-        row_real = add_title_bar(row_real, "Real Observation (High / Left / Right)")
+        row_real = add_title_bar(row_real, f"Real Observation (High / Left / Right)  [frame {i}/{n_real}]")
 
         target_width = row_real.shape[1]
 
-        if imagined_video is not None and i < n_imagined:
-            img_frame = imagined_video[i]
+        # --- Chunk-aware imagined frame lookup ---
+        img_frame = None
+        chunk_id = -1
+        if frame_map is not None and i < len(frame_map):
+            chunk_id, img_idx = frame_map[i]
+            if img_idx >= 0 and chunk_id < len(gen_video_list):
+                img_frame = gen_video_list[chunk_id][img_idx]
+
+        if img_frame is not None:
             if img_frame.dtype != np.uint8 and img_frame.max() <= 1.0001:
                 img_frame = (img_frame * 255).astype(np.uint8)
             elif img_frame.dtype != np.uint8:
                 img_frame = img_frame.astype(np.uint8)
 
-            h = int(img_frame.shape[0] * target_width / img_frame.shape[1])
-            row_imagined = cv2.resize(img_frame, (target_width, h))
+            im_high, im_left, im_right = _split_tshape_frame(img_frame)
+            row_imagined = np.hstack([
+                resize_h(im_high, base_h),
+                resize_h(im_left, base_h),
+                resize_h(im_right, base_h)
+            ])
+            if row_imagined.shape[1] != target_width:
+                row_imagined = cv2.resize(row_imagined, (target_width, base_h))
         else:
-            row_imagined = np.zeros((300, target_width, 3), dtype=np.uint8)
-            cv2.putText(row_imagined, "Coming soon", (target_width//2 - 100, 150), 
+            row_imagined = np.zeros((base_h, target_width, 3), dtype=np.uint8)
+            cv2.putText(row_imagined, "No imagined video", (target_width//2 - 120, base_h//2),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
 
         row_imagined = np.ascontiguousarray(row_imagined)
-        row_imagined = add_title_bar(row_imagined, "Imagined Video Stream")
+        chunk_label = f"  [chunk {chunk_id}]" if chunk_id >= 0 else ""
+        row_imagined = add_title_bar(row_imagined,
+                                     f"Imagined Video Stream (High / Left / Right){chunk_label}")
         full_frame = np.vstack([row_real, row_imagined])
         full_frame = np.ascontiguousarray(full_frame)
+
+        if fixed_frame_size is None:
+            fixed_frame_size = (full_frame.shape[1], full_frame.shape[0])
+        elif (full_frame.shape[1], full_frame.shape[0]) != fixed_frame_size:
+            full_frame = cv2.resize(full_frame, fixed_frame_size)
+
         final_frames.append(full_frame)
 
     imageio.mimsave(save_path, final_frames, fps=fps)
@@ -545,6 +619,7 @@ def eval_policy(task_name,
         full_obs_list = []
         gen_video_list = []
         full_action_history = []
+        chunk_obs_counts = []  # track how many real obs frames per chunk
 
         initial_obs = TASK_ENV.get_obs() 
         inint_eef_pose = initial_obs['endpose']['left_endpose'] + \
@@ -571,6 +646,8 @@ def eval_policy(task_name,
             action_per_frame = action.shape[2] // 4
 
             start_idx = 1 if first else 0
+            # Count real obs frames for this chunk: 1 (initial, only chunk 0) + key frames
+            chunk_n_obs = (1 if first else 0)  # initial obs counted for chunk 0
             for i in range(start_idx, action.shape[1]):
                 for j in range(action.shape[2]):
                     raw_action_step = action[:, i, j].flatten() 
@@ -602,7 +679,9 @@ def eval_policy(task_name,
                         obs = format_obs(TASK_ENV.get_obs(), prompt)
                         full_obs_list.append(obs)
                         key_frame_list.append(obs)
+                        chunk_n_obs += 1
                     
+            chunk_obs_counts.append(chunk_n_obs)
             first = False
 
             model.infer(dict(obs = key_frame_list, compute_kv_cache=True, imagine=False, save_visualization=save_visualization, state=action))
@@ -618,10 +697,11 @@ def eval_policy(task_name,
         out_img_file = vis_dir / video_name
         save_comparison_video(
             real_obs_list=full_obs_list,
-            imagined_video=None, #gen_video_list,
+            imagined_video=gen_video_list if gen_video_list else None,
             action_history=full_action_history,
             save_path=str(out_img_file),
-            fps=15 # Suggest adjusting fps based on simulation step
+            fps=10,
+            chunk_obs_counts=chunk_obs_counts
         )
         if TASK_ENV.eval_video_path is not None:
             TASK_ENV._del_eval_video_ffmpeg()

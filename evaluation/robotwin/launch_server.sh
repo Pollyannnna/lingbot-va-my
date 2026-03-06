@@ -1,7 +1,7 @@
 START_PORT=${START_PORT:-29056}
 MASTER_PORT=${MASTER_PORT:-29061}
 
-save_root='visualization/'
+save_root='/data/share/lijiang/yeziyang-exp/visualization/'
 mkdir -p $save_root
 
 python -m torch.distributed.run \

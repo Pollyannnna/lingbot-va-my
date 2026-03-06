@@ -1,0 +1,159 @@
+The config attributes {'clip_output': False} were passed to AutoencoderKLWan, but are not expected and will be ignored. Please verify your config.json configuration file.
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  67%|██████▋   | 2/3 [00:00<00:00,  9.20it/s]Loading checkpoint shards: 100%|██████████| 3/3 [00:00<00:00, 11.34it/s]
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|███▎      | 1/3 [00:00<00:00,  2.22it/s]Loading checkpoint shards:  67%|██████▋   | 2/3 [00:00<00:00,  2.11it/s]Loading checkpoint shards: 100%|██████████| 3/3 [00:01<00:00,  2.92it/s]
+Some weights of the model checkpoint at /data/share/lijiang/ckpt/lingbot-va-posttrain-robotwin/transformer were not used when initializing WanTransformer3DModel: 
+ ['patch_embedding.bias, patch_embedding.weight']
+/data/250010187/yeziyang1/miniconda3/envs/lingbotva/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4876: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  warnings.warn(  # warn only once
+[rank0]:[W303 15:01:18.070494324 ProcessGroupNCCL.cpp:5068] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()
+The config attributes {'clip_output': False} were passed to AutoencoderKLWan, but are not expected and will be ignored. Please verify your config.json configuration file.
+2026-03-03 15:01:24,468 - root - INFO - ******************************USE Server mode******************************
+2026-03-03 15:01:24,469 - root - INFO - Running in ASYNC SERVER mode
+2026-03-03 15:01:24,471 - websockets.server - INFO - server listening on 0.0.0.0:29556
+2026-03-03 15:01:24,580 - websockets.server - INFO - connection open
+2026-03-03 15:01:24,580 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 60070) opened
+2026-03-03 15:01:24,581 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 60070) closed
+2026-03-03 15:01:30,098 - websockets.server - INFO - connection open
+2026-03-03 15:01:30,099 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 60082) opened
+2026-03-03 15:01:30,100 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 60082) closed
+2026-03-03 15:01:35,632 - websockets.server - INFO - connection open
+2026-03-03 15:01:35,633 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 46966) opened
+2026-03-03 15:01:35,634 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 46966) closed
+2026-03-03 15:01:41,132 - websockets.server - INFO - connection open
+2026-03-03 15:01:41,133 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 46978) opened
+2026-03-03 15:01:41,133 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 46978) closed
+2026-03-03 15:01:46,634 - websockets.server - INFO - connection open
+2026-03-03 15:01:46,634 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 36330) opened
+2026-03-03 15:01:46,635 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 36330) closed
+2026-03-03 15:01:52,155 - websockets.server - INFO - connection open
+2026-03-03 15:01:52,156 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 36332) opened
+2026-03-03 15:01:52,157 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 36332) closed
+2026-03-03 15:01:57,869 - websockets.server - INFO - connection open
+2026-03-03 15:01:57,869 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 40824) opened
+2026-03-03 15:01:57,870 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 40824) closed
+2026-03-03 15:02:03,359 - websockets.server - INFO - connection open
+2026-03-03 15:02:03,359 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 40826) opened
+2026-03-03 15:02:03,360 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 40826) closed
+2026-03-03 15:02:08,852 - websockets.server - INFO - connection open
+2026-03-03 15:02:08,853 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 33098) opened
+2026-03-03 15:02:08,853 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 33098) closed
+2026-03-03 15:02:14,355 - websockets.server - INFO - connection open
+2026-03-03 15:02:14,356 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 43954) opened
+2026-03-03 15:02:14,357 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 43954) closed
+2026-03-03 15:02:19,847 - websockets.server - INFO - connection open
+2026-03-03 15:02:19,848 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 43958) opened
+2026-03-03 15:02:19,849 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 43958) closed
+2026-03-03 15:02:25,324 - websockets.server - INFO - connection open
+2026-03-03 15:02:25,325 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 54112) opened
+2026-03-03 15:02:25,326 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 54112) closed
+2026-03-03 15:02:30,825 - websockets.server - INFO - connection open
+2026-03-03 15:02:30,826 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 54126) opened
+2026-03-03 15:02:30,827 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 54126) closed
+2026-03-03 15:02:36,312 - websockets.server - INFO - connection open
+2026-03-03 15:02:36,313 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 49260) opened
+2026-03-03 15:02:36,313 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 49260) closed
+2026-03-03 15:02:41,800 - websockets.server - INFO - connection open
+2026-03-03 15:02:41,801 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 49270) opened
+2026-03-03 15:02:41,802 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 49270) closed
+2026-03-03 15:02:47,318 - websockets.server - INFO - connection open
+2026-03-03 15:02:47,319 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 47740) opened
+2026-03-03 15:02:47,320 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 47740) closed
+2026-03-03 15:02:52,828 - websockets.server - INFO - connection open
+2026-03-03 15:02:52,829 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 47748) opened
+2026-03-03 15:02:52,830 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 47748) closed
+2026-03-03 15:02:58,313 - websockets.server - INFO - connection open
+2026-03-03 15:02:58,313 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 44100) opened
+2026-03-03 15:02:58,314 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 44100) closed
+2026-03-03 15:03:03,797 - websockets.server - INFO - connection open
+2026-03-03 15:03:03,797 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58900) opened
+2026-03-03 15:03:03,798 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58900) closed
+2026-03-03 15:03:09,277 - websockets.server - INFO - connection open
+2026-03-03 15:03:09,277 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58914) opened
+2026-03-03 15:03:09,278 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58914) closed
+2026-03-03 15:03:14,763 - websockets.server - INFO - connection open
+2026-03-03 15:03:14,763 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 50330) opened
+2026-03-03 15:03:14,764 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 50330) closed
+2026-03-03 15:03:20,236 - websockets.server - INFO - connection open
+2026-03-03 15:03:20,237 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 50340) opened
+2026-03-03 15:03:20,238 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 50340) closed
+2026-03-03 15:03:25,742 - websockets.server - INFO - connection open
+2026-03-03 15:03:25,743 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58884) opened
+2026-03-03 15:03:25,744 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58884) closed
+2026-03-03 15:03:31,309 - websockets.server - INFO - connection open
+2026-03-03 15:03:31,309 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58890) opened
+2026-03-03 15:03:31,310 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58890) closed
+2026-03-03 15:03:36,806 - websockets.server - INFO - connection open
+2026-03-03 15:03:36,806 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 39520) opened
+2026-03-03 15:03:36,807 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 39520) closed
+2026-03-03 15:03:42,305 - websockets.server - INFO - connection open
+2026-03-03 15:03:42,306 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 39532) opened
+2026-03-03 15:03:42,307 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 39532) closed
+2026-03-03 15:03:47,820 - websockets.server - INFO - connection open
+2026-03-03 15:03:47,820 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 53148) opened
+2026-03-03 15:03:47,821 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 53148) closed
+2026-03-03 15:03:53,316 - websockets.server - INFO - connection open
+2026-03-03 15:03:53,317 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 53156) opened
+2026-03-03 15:03:53,317 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 53156) closed
+2026-03-03 15:03:58,803 - websockets.server - INFO - connection open
+2026-03-03 15:03:58,804 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 53396) opened
+2026-03-03 15:03:58,805 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 53396) closed
+2026-03-03 15:04:04,298 - websockets.server - INFO - connection open
+2026-03-03 15:04:04,299 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 37930) opened
+2026-03-03 15:04:04,300 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 37930) closed
+2026-03-03 15:04:09,791 - websockets.server - INFO - connection open
+2026-03-03 15:04:09,791 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 37932) opened
+2026-03-03 15:04:09,792 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 37932) closed
+2026-03-03 15:04:15,315 - websockets.server - INFO - connection open
+2026-03-03 15:04:15,316 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 50812) opened
+2026-03-03 15:04:15,317 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 50812) closed
+2026-03-03 15:04:20,805 - websockets.server - INFO - connection open
+2026-03-03 15:04:20,806 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 50824) opened
+2026-03-03 15:04:20,807 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 50824) closed
+2026-03-03 15:04:26,294 - websockets.server - INFO - connection open
+2026-03-03 15:04:26,295 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58790) opened
+2026-03-03 15:04:26,296 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58790) closed
+2026-03-03 15:04:31,785 - websockets.server - INFO - connection open
+2026-03-03 15:04:31,786 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58796) opened
+2026-03-03 15:04:31,786 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 58796) closed
+2026-03-03 15:04:37,271 - websockets.server - INFO - connection open
+2026-03-03 15:04:37,272 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 57684) opened
+2026-03-03 15:04:37,273 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 57684) closed
+2026-03-03 15:04:42,765 - websockets.server - INFO - connection open
+2026-03-03 15:04:42,765 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 57694) opened
+2026-03-03 15:04:42,766 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 57694) closed
+2026-03-03 15:04:48,287 - websockets.server - INFO - connection open
+2026-03-03 15:04:48,288 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 55400) opened
+2026-03-03 15:04:48,288 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 55400) closed
+2026-03-03 15:04:53,773 - websockets.server - INFO - connection open
+2026-03-03 15:04:53,774 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 57082) opened
+2026-03-03 15:04:53,774 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 57082) closed
+2026-03-03 15:04:59,270 - websockets.server - INFO - connection open
+2026-03-03 15:04:59,270 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 57092) opened
+2026-03-03 15:04:59,271 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 57092) closed
+2026-03-03 15:05:05,074 - websockets.server - INFO - connection open
+2026-03-03 15:05:05,075 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 51702) opened
+2026-03-03 15:05:05,076 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 51702) closed
+2026-03-03 15:05:10,560 - websockets.server - INFO - connection open
+2026-03-03 15:05:10,561 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 51714) opened
+2026-03-03 15:05:10,562 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 51714) closed
+2026-03-03 15:05:16,074 - websockets.server - INFO - connection open
+2026-03-03 15:05:16,074 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 33928) opened
+2026-03-03 15:05:16,075 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 33928) closed
+2026-03-03 15:05:21,568 - websockets.server - INFO - connection open
+2026-03-03 15:05:21,569 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 33938) opened
+2026-03-03 15:05:21,569 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 33938) closed
+2026-03-03 15:05:27,066 - websockets.server - INFO - connection open
+2026-03-03 15:05:27,066 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 43528) opened
+2026-03-03 15:05:27,067 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 43528) closed
+2026-03-03 15:05:32,544 - websockets.server - INFO - connection open
+2026-03-03 15:05:32,544 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 43540) opened
+2026-03-03 15:05:32,545 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 43540) closed
+2026-03-03 15:05:38,019 - websockets.server - INFO - connection open
+2026-03-03 15:05:38,019 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 39814) opened
+2026-03-03 15:05:38,020 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 39814) closed
+2026-03-03 15:05:43,516 - websockets.server - INFO - connection open
+2026-03-03 15:05:43,517 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 39816) opened
+2026-03-03 15:05:43,518 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 39816) closed
+2026-03-03 15:05:49,021 - websockets.server - INFO - connection open
+2026-03-03 15:05:49,021 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 54224) opened
+2026-03-03 15:05:49,022 - utils.Simple_Remote_Infer.deploy.websocket_policy_server - INFO - Connection from ('127.0.0.1', 54224) closed
