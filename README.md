@@ -201,7 +201,15 @@ We support post-training (fine-tuning) LingBot-VA on custom robotic manipulation
 On top of the base installation, post-training requires:
 
 ```bash
-pip install lerobot==0.3.3 scipy wandb --no-deps
+pip install lerobot==0.3.3 scipy swanlab --no-deps
+```
+
+### SwanLab Login
+
+Before training, login once in your environment:
+
+```bash
+swanlab login
 ```
 
 ### Data Preparation
@@ -326,7 +334,9 @@ The latent file naming convention `episode_{index}_{start_frame}_{end_frame}.pth
 ### Training
 
 ```bash
-NGPU=8 bash script/run_va_posttrain.sh
+SWANLAB_WORKSPACE=Yeziyang SWANLAB_PROJECT=Lingbot-VA-Robotwin NGPU=8 bash script/run_va_posttrain.sh
+# or for RoboCasa:
+SWANLAB_WORKSPACE=Yeziyang SWANLAB_PROJECT=Lingbot-VA-Robocasa0.2 NGPU=8 bash script/run_va_posttrain_robocasa.sh
 ```
 
 For better training performance, use a larger global batch size (e.g., 32, 64). If you have limited GPU resources, you can increase `gradient_accumulation_steps` to achieve a larger effective batch size.

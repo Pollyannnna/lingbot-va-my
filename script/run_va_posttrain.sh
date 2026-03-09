@@ -16,10 +16,13 @@ if [ $# -ne 0 ]; then
     overrides="$*"
 fi
 
-export WANDB_API_KEY="your key"
-export WANDB_BASE_URL="your url"
-export WANDB_TEAM_NAME="your team name"
-export WANDB_PROJECT="your project"
+# SwanLab:
+# 1) Recommended: run `swanlab login` once before training.
+# 2) Optional: set SWANLAB_API_KEY for non-interactive login in train.py.
+export ROBOTWIN_ENABLE_SWANLAB="${ROBOTWIN_ENABLE_SWANLAB:-1}"
+export SWANLAB_API_KEY="${SWANLAB_API_KEY:-}"
+export SWANLAB_WORKSPACE="${SWANLAB_WORKSPACE:-Yeziyang}"
+export SWANLAB_PROJECT="${SWANLAB_PROJECT:-Lingbot-VA-Robotwin}"
 
 ## node setting
 num_gpu=${NGPU}

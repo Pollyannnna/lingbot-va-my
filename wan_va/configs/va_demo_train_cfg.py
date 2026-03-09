@@ -10,7 +10,10 @@ va_demo_train_cfg.update(va_demo_cfg)
 
 va_demo_train_cfg.dataset_path = '/path/to/your/dataset'
 va_demo_train_cfg.empty_emb_path = os.path.join(va_demo_train_cfg.dataset_path, 'empty_emb.pt')
-va_demo_train_cfg.enable_wandb = True
+va_demo_train_cfg.enable_swanlab = os.getenv(
+    "DEMO_ENABLE_SWANLAB", os.getenv("DEMO_ENABLE_WANDB", "1")
+) != "0"
+va_demo_train_cfg.enable_wandb = va_demo_train_cfg.enable_swanlab
 va_demo_train_cfg.load_worker = 16
 va_demo_train_cfg.save_interval = 50
 va_demo_train_cfg.gc_interval = 50

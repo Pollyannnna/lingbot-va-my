@@ -3,7 +3,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-import wandb
+import json
 
 import torch
 import torch.distributed as dist
@@ -17,7 +17,11 @@ from torch.distributed.checkpoint.state_dict import (
     StateDictOptions,
 )
 from safetensors.torch import save_file, load_file
-import json
+
+try:
+    import swanlab
+except ImportError:
+    swanlab = None
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -47,21 +51,45 @@ from dataset import MultiLatentLeRobotDataset
 import gc
 
 
+def _safe_config_for_logging(config):
+    config_dict = dict(config) if hasattr(config, "items") else vars(config)
+    return json.loads(json.dumps(config_dict, default=str))
+
+
 class Trainer:
     def __init__(self, config):
-        if config.enable_wandb and config.rank == 0:
-            wandb.login(host=os.environ['WANDB_BASE_URL'], key=os.environ['WANDB_API_KEY'])
-            self.wandb = wandb
-            self.wandb.init(
-                entity=os.environ["WANDB_TEAM_NAME"],
-                project=os.getenv("WANDB_PROJECT", "va_robotwin"),
-                # dir=log_dir,
-                config=config,
-                mode="online",
-                name='test_lln'
-                # name=os.path.basename(os.path.normpath(job_config.job.dump_folder))
-            )
-            logger.info("WandB logging enabled")
+        self.swanlab = None
+        self.enable_swanlab = bool(
+            getattr(config, "enable_swanlab", getattr(config, "enable_wandb", False))
+        )
+        if self.enable_swanlab and config.rank == 0:
+            if swanlab is None:
+                raise ImportError(
+                    "SwanLab logging is enabled but `swanlab` is not installed. "
+                    "Please run `pip install swanlab`."
+                )
+
+            swanlab_api_key = os.getenv("SWANLAB_API_KEY", "").strip()
+            if swanlab_api_key:
+                try:
+                    swanlab.login(api_key=swanlab_api_key)
+                except TypeError:
+                    swanlab.login(swanlab_api_key)
+
+            self.swanlab = swanlab
+            swanlab_workspace = os.getenv(
+                "SWANLAB_WORKSPACE", os.getenv("WANDB_TEAM_NAME", "")
+            ).strip()
+            init_kwargs = {
+                "project": os.getenv(
+                    "SWANLAB_PROJECT", os.getenv("WANDB_PROJECT", "va_robotwin")
+                ),
+                "config": _safe_config_for_logging(config),
+            }
+            if swanlab_workspace:
+                init_kwargs["workspace"] = swanlab_workspace
+            self.swanlab.init(**init_kwargs)
+            logger.info("SwanLab logging enabled")
         self.step = 0
         self.config = config
         self.device = torch.device(f"cuda:{config.local_rank}")
@@ -478,8 +506,8 @@ class Trainer:
                         'grad_norm': f'{total_norm.item():.2f}',
                         'lr': f'{lr:.2e}'
                     })
-                    if self.config.enable_wandb:
-                        self.wandb.log({
+                    if self.enable_swanlab and self.swanlab is not None:
+                        self.swanlab.log({
                             'loss_metrics/global_avg_video_loss': latent_loss_show,
                             'loss_metrics/global_avg_action_loss': action_loss_show,
                             'loss_metrics/global_max_video_loss': max_latent_loss_show,
@@ -499,6 +527,8 @@ class Trainer:
                 dist.barrier()
 
         progress_bar.close()
+        if self.config.rank == 0 and self.enable_swanlab and self.swanlab is not None:
+            self.swanlab.finish()
         logger.info("Training completed!")
 
 

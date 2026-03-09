@@ -255,6 +255,10 @@ fi
 echo ""
 echo "── Phase 3: Starting ${NUM_MY_TASKS} clients ─────────────────────"
 
+TIMING_LOG_MODE=${TIMING_LOG_MODE:-core}
+KEEP_CALL_DETAILS=${KEEP_CALL_DETAILS:-0}
+echo "  Timing log mode: ${TIMING_LOG_MODE} (KEEP_CALL_DETAILS=${KEEP_CALL_DETAILS})"
+
 CLIENT_PIDS=()
 for local_i in $(seq 0 $(( NUM_MY_TASKS - 1 ))); do
     task="${ALL_TASKS[$(( START_IDX + local_i ))]}"
@@ -267,6 +271,8 @@ for local_i in $(seq 0 $(( NUM_MY_TASKS - 1 ))); do
     CUDA_VISIBLE_DEVICES=$gpu \
     PYTHONWARNINGS=ignore::UserWarning \
     XLA_PYTHON_CLIENT_MEM_FRACTION=0.5 \
+    LINGBOT_TIMING_LOG_MODE=${TIMING_LOG_MODE} \
+    LINGBOT_KEEP_CALL_DETAILS=${KEEP_CALL_DETAILS} \
     nohup ${CLIENT_PYTHON} -m evaluation.robotwin.eval_with_logging \
         --config policy/ACT/deploy_policy.yml --overrides \
         --task_name ${task} --task_config demo_clean \
