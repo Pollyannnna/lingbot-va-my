@@ -2,6 +2,7 @@
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 import json
 
@@ -114,6 +115,11 @@ class Trainer:
             torch_dtype=torch.float32,
             torch_device='cpu',
         )
+        if config.rank == 0:
+            logger.info(
+                "Transformer attention mode: %s",
+                getattr(self.transformer.config, "attn_mode", "unknown"),
+            )
 
         logger.info("Setting up activation checkpointing ...")
         apply_ac(self.transformer)
@@ -146,7 +152,11 @@ class Trainer:
 
         # Setup dataloaders
         logger.info("Setting up datasets...")
-        train_dataset = MultiLatentLeRobotDataset(config=config)
+        dataset_init_worker = max(1, int(getattr(config, "dataset_init_worker", 8)))
+        train_dataset = MultiLatentLeRobotDataset(
+            config=config,
+            num_init_worker=dataset_init_worker,
+        )
         train_sampler = DistributedSampler(
             train_dataset,
             num_replicas=config.world_size,
@@ -154,12 +164,24 @@ class Trainer:
             shuffle=True,
             seed=42
         ) if config.world_size > 1 else None
+        loader_kwargs = dict(
+            pin_memory=bool(getattr(config, "pin_memory", True)),
+            persistent_workers=(
+                config.load_worker > 0
+                and bool(getattr(config, "persistent_workers", True))
+            ),
+        )
+        prefetch_factor = int(getattr(config, "prefetch_factor", 2))
+        if config.load_worker > 0 and prefetch_factor > 0:
+            loader_kwargs["prefetch_factor"] = prefetch_factor
+
         self.train_loader = DataLoader(
             train_dataset,
             batch_size=config.batch_size,
-            shuffle=(train_sampler is None), 
+            shuffle=(train_sampler is None),
             num_workers=config.load_worker,
             sampler=train_sampler,
+            **loader_kwargs,
         )
 
         self.train_scheduler_latent = FlowMatchScheduler(shift=self.config.snr_shift, sigma_min=0.0, extra_one_step=True)
@@ -172,8 +194,84 @@ class Trainer:
 
         self.gradient_accumulation_steps = getattr(config, 'gradient_accumulation_steps', 1)
         self.train_loader_iter = None
+        self.profile_steps = max(
+            0,
+            int(os.getenv("ROBOCASA_PROFILE_STEPS", "0")),
+        )
+        self.profile_start_step = max(
+            0,
+            int(os.getenv("ROBOCASA_PROFILE_START_STEP", "0")),
+        )
+        self.profile_cuda_sync = os.getenv("ROBOCASA_PROFILE_CUDA_SYNC", "1") != "0"
+        self.profile_stage_order = [
+            "data_wait",
+            "h2d",
+            "prepare",
+            "forward",
+            "loss",
+            "backward",
+            "optim",
+            "metrics_sync",
+            "housekeeping",
+            "checkpoint",
+            "total",
+        ]
+        if self.profile_steps > 0 and self.config.rank == 0:
+            logger.info(
+                "Step profiling enabled: start_step=%s profile_steps=%s cuda_sync=%s",
+                self.profile_start_step,
+                self.profile_steps,
+                self.profile_cuda_sync,
+            )
         # if hasattr(config, 'resume_from') and config.resume_from:
         #     self._load_training_state(config.resume_from)
+
+    def _profiling_enabled_for_current_step(self):
+        if self.profile_steps <= 0:
+            return False
+        return self.profile_start_step <= self.step < (self.profile_start_step + self.profile_steps)
+
+    def _sync_for_timing(self, enabled):
+        if not enabled:
+            return
+        if self.profile_cuda_sync and self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+
+    def _time_mark(self, enabled):
+        self._sync_for_timing(enabled)
+        return time.perf_counter()
+
+    def _time_elapsed(self, start_time, enabled):
+        self._sync_for_timing(enabled)
+        return time.perf_counter() - start_time
+
+    def _merge_profile_times(self, target, source):
+        for key, value in source.items():
+            target[key] = target.get(key, 0.0) + float(value)
+
+    def _log_profile_times(self, step_id, stage_times):
+        stage_names = [name for name in self.profile_stage_order if name in stage_times]
+        local_values = torch.tensor(
+            [stage_times[name] for name in stage_names],
+            device=self.device,
+            dtype=torch.float64,
+        )
+        mean_values = local_values.clone()
+        max_values = local_values.clone()
+        if dist.is_initialized():
+            dist.all_reduce(mean_values, op=dist.ReduceOp.SUM)
+            mean_values /= self.config.world_size
+            dist.all_reduce(max_values, op=dist.ReduceOp.MAX)
+
+        if self.config.rank != 0:
+            return
+
+        parts = []
+        for idx, name in enumerate(stage_names):
+            parts.append(
+                f"{name}=avg{mean_values[idx].item():.3f}s/max{max_values[idx].item():.3f}s"
+            )
+        logger.info("[PROFILE step=%s] %s", step_id, " | ".join(parts))
     
     def _get_next_batch(self):
         """Get next batch from iterator, reset if epoch is finished."""
@@ -321,10 +419,19 @@ class Trainer:
 
         return latent_loss / self.gradient_accumulation_steps, action_loss / self.gradient_accumulation_steps
 
-    def _train_step(self, batch, batch_idx):
+    def _train_step(self, batch, batch_idx, profile_enabled=False):
         """Train a single batch, returns losses for logging."""
+        stage_times = {}
+
+        stage_start = self._time_mark(profile_enabled)
         batch = self.convert_input_format(batch)
+        if profile_enabled:
+            stage_times["h2d"] = self._time_elapsed(stage_start, profile_enabled)
+
+        stage_start = self._time_mark(profile_enabled)
         input_dict = self._prepare_input_dict(batch)
+        if profile_enabled:
+            stage_times["prepare"] = self._time_elapsed(stage_start, profile_enabled)
         
         should_sync = (batch_idx + 1) % self.gradient_accumulation_steps == 0
         
@@ -333,24 +440,43 @@ class Trainer:
         else:
             self.transformer.set_requires_gradient_sync(True)
 
+        stage_start = self._time_mark(profile_enabled)
         output = self.transformer(input_dict, train_mode=True)
+        if profile_enabled:
+            stage_times["forward"] = self._time_elapsed(stage_start, profile_enabled)
+
+        stage_start = self._time_mark(profile_enabled)
         latent_loss, action_loss = self.compute_loss(input_dict, output)
+        if profile_enabled:
+            stage_times["loss"] = self._time_elapsed(stage_start, profile_enabled)
         loss = latent_loss + action_loss
 
+        stage_start = self._time_mark(profile_enabled)
         loss.backward()
+        if profile_enabled:
+            stage_times["backward"] = self._time_elapsed(stage_start, profile_enabled)
 
-        losses = {'latent_loss': latent_loss.detach(), 'action_loss': action_loss.detach()}
+        losses = {
+            'latent_loss': latent_loss.detach(),
+            'action_loss': action_loss.detach(),
+            'profile_times': stage_times,
+        }
         
         # Only update weights after accumulating gradients
         if should_sync:
+            stage_start = self._time_mark(profile_enabled)
             total_norm = torch.nn.utils.clip_grad_norm_(self.transformer.parameters(), 2.0)
             self.optimizer.step()
             self.lr_scheduler.step()
             self.optimizer.zero_grad()
+            if profile_enabled:
+                losses['profile_times']['optim'] = self._time_elapsed(stage_start, profile_enabled)
             
             losses['total_norm'] = total_norm
             losses['should_log'] = True
         else:
+            if profile_enabled:
+                losses['profile_times']['optim'] = 0.0
             losses['should_log'] = False
 
         return losses
@@ -464,12 +590,21 @@ class Trainer:
         accumulated_latent_losses = []
         accumulated_action_losses = []
         step_in_accumulation = 0
+        profile_accumulator = {}
 
         while self.step < self.config.num_steps:
+            profile_enabled = self._profiling_enabled_for_current_step()
+            step_wall_start = self._time_mark(profile_enabled)
+
             # Get next batch (handles epoch reset automatically)
+            stage_start = self._time_mark(profile_enabled)
             batch = self._get_next_batch()
+            if profile_enabled:
+                profile_accumulator["data_wait"] = profile_accumulator.get("data_wait", 0.0) + self._time_elapsed(stage_start, profile_enabled)
             
-            losses = self._train_step(batch, step_in_accumulation)
+            losses = self._train_step(batch, step_in_accumulation, profile_enabled=profile_enabled)
+            if profile_enabled:
+                self._merge_profile_times(profile_accumulator, losses.get("profile_times", {}))
             
             # Accumulate losses for logging
             accumulated_latent_losses.append(losses['latent_loss'])
@@ -481,20 +616,26 @@ class Trainer:
                 lr = self.lr_scheduler.get_last_lr()[0]
 
                 # Average accumulated losses
+                stage_start = self._time_mark(profile_enabled)
                 latent_loss_show = dist_mean(torch.stack(accumulated_latent_losses).sum()).detach().cpu().item()
                 action_loss_show = dist_mean(torch.stack(accumulated_action_losses).sum()).detach().cpu().item()
                 max_latent_loss_show = dist_max(torch.stack(accumulated_latent_losses).sum()).detach().cpu().item()
                 max_action_loss_show = dist_max(torch.stack(accumulated_action_losses).sum()).detach().cpu().item()
+                if profile_enabled:
+                    profile_accumulator["metrics_sync"] = profile_accumulator.get("metrics_sync", 0.0) + self._time_elapsed(stage_start, profile_enabled)
 
                 # Clear accumulated losses
                 accumulated_latent_losses = []
                 accumulated_action_losses = []
                 step_in_accumulation = 0
 
+                stage_start = self._time_mark(profile_enabled)
                 torch.cuda.synchronize()
                 if self.step % self.config.gc_interval == 0:
                     torch.cuda.empty_cache()
                     gc.collect()
+                if profile_enabled:
+                    profile_accumulator["housekeeping"] = profile_accumulator.get("housekeeping", 0.0) + self._time_elapsed(stage_start, profile_enabled)
 
                 if self.config.rank == 0:
                     total_norm = losses['total_norm']
@@ -519,14 +660,25 @@ class Trainer:
                 self.step += 1
                 
                 if self.step % self.config.save_interval == 0:
+                    stage_start = self._time_mark(profile_enabled)
                     if self.config.rank == 0:
                         logger.info(f"Starting save model at step {self.step}")
                     self.save_checkpoint()
+                    if profile_enabled:
+                        profile_accumulator["checkpoint"] = profile_accumulator.get("checkpoint", 0.0) + self._time_elapsed(stage_start, profile_enabled)
 
-            if dist.is_initialized():
-                dist.barrier()
+                if profile_enabled:
+                    profile_accumulator["total"] = profile_accumulator.get("total", 0.0) + self._time_elapsed(step_wall_start, profile_enabled)
+                    self._log_profile_times(self.step, profile_accumulator)
+                    profile_accumulator = {}
+            elif profile_enabled:
+                profile_accumulator["total"] = profile_accumulator.get("total", 0.0) + self._time_elapsed(step_wall_start, profile_enabled)
 
         progress_bar.close()
+        if self.step > 0 and self.step % self.config.save_interval != 0:
+            if self.config.rank == 0:
+                logger.info(f"Saving final checkpoint at step {self.step}")
+            self.save_checkpoint()
         if self.config.rank == 0 and self.enable_swanlab and self.swanlab is not None:
             self.swanlab.finish()
         logger.info("Training completed!")

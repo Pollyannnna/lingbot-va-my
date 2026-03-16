@@ -47,8 +47,15 @@ def construct_lerobot_multi_processor(config,
     )
     repo_list = recursive_find_file(config.dataset_path, 'info.json')
     repo_list = [v.split('/meta/info.json')[0] for v in repo_list]
-    with Pool(num_init_worker) as pool:
-        datasets_out_lst = pool.map(construct_func, repo_list)
+    if not repo_list:
+        return datasets_out_lst
+
+    num_init_worker = max(1, min(num_init_worker, len(repo_list)))
+    if num_init_worker == 1:
+        datasets_out_lst = [construct_func(repo_id) for repo_id in repo_list]
+    else:
+        with Pool(num_init_worker) as pool:
+            datasets_out_lst = pool.map(construct_func, repo_list)
                 
     return datasets_out_lst
 
@@ -71,7 +78,7 @@ class MultiLatentLeRobotDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         config,
-        num_init_worker=128,
+        num_init_worker=8,
     ):
         self._datasets = construct_lerobot_multi_processor(config, 
                                                            num_init_worker, 
@@ -261,6 +268,15 @@ class LatentLeRobotDataset(LeRobotDataset):
             left_action = get_relative_pose(action[:, :7])
             right_action = get_relative_pose(action[:, 8:15])
             action = np.concatenate([left_action, action[:, 7:8], right_action, action[:, 15:16]], axis=1)
+        elif self.config.env_type == 'robocasa':
+            # RoboCasa raw 12D env action contains base + control mode + arm.
+            # Select the 7 manipulator channels: ee xyz, ee rot xyz, gripper.
+            raw_action_ids = getattr(
+                self.config,
+                "raw_action_channel_ids",
+                list(range(len(self.config.used_action_channel_ids))),
+            )
+            action = action[:, raw_action_ids]
         action = np.pad(action, pad_width=((frame_stride * 4, 0), (0, 0)), mode='constant', constant_values=0)
 
         latent_frame_num = (len(latent_frame_ids) - 1) // 4 + 1

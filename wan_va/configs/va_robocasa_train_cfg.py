@@ -8,7 +8,7 @@ from .va_robocasa_cfg import va_robocasa_cfg
 va_robocasa_train_cfg = EasyDict(__name__="Config: VA robocasa train")
 va_robocasa_train_cfg.update(va_robocasa_cfg)
 
-default_dataset_path = "/path/to/your/robocasa_lerobot_dataset"
+default_dataset_path = "/data/share/lijiang/data/robocasa365/target-human-50"
 va_robocasa_train_cfg.dataset_path = os.getenv(
     "ROBOCASA_DATASET_PATH",
     default_dataset_path,
@@ -27,6 +27,16 @@ va_robocasa_train_cfg.enable_swanlab = os.getenv(
 ) != "0"
 va_robocasa_train_cfg.enable_wandb = va_robocasa_train_cfg.enable_swanlab
 va_robocasa_train_cfg.load_worker = int(os.getenv("ROBOCASA_LOAD_WORKER", "16"))
+va_robocasa_train_cfg.dataset_init_worker = int(
+    os.getenv("ROBOCASA_DATASET_INIT_WORKER", "8")
+)
+va_robocasa_train_cfg.prefetch_factor = int(
+    os.getenv("ROBOCASA_DATALOADER_PREFETCH", "2")
+)
+va_robocasa_train_cfg.pin_memory = os.getenv("ROBOCASA_PIN_MEMORY", "1") != "0"
+va_robocasa_train_cfg.persistent_workers = (
+    os.getenv("ROBOCASA_PERSISTENT_WORKERS", "1") != "0"
+)
 va_robocasa_train_cfg.save_interval = int(os.getenv("ROBOCASA_SAVE_INTERVAL", "1000"))
 va_robocasa_train_cfg.gc_interval = int(os.getenv("ROBOCASA_GC_INTERVAL", "50"))
 va_robocasa_train_cfg.cfg_prob = float(os.getenv("ROBOCASA_CFG_PROB", "0.1"))
