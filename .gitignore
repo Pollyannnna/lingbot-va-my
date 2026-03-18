@@ -2,4 +2,8 @@
 visualization/
 logs/
 example/
+__pycache__/
+*.py[cod]
+wan_va/train copy.py
+wan_va/train.py.backup
 EOF

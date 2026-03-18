@@ -6,8 +6,27 @@ from easydict import EasyDict
 from .shared_config import va_shared_cfg
 
 
+def _sanitize_quantiles(
+    q01_7: list[float],
+    q99_7: list[float],
+    min_span: float = 1e-3,
+) -> tuple[list[float], list[float]]:
+    sanitized_q01 = list(q01_7)
+    sanitized_q99 = list(q99_7)
+    fallback_q01 = [-1.0] * len(sanitized_q01)
+    fallback_q99 = [1.0] * len(sanitized_q99)
+
+    for i, (q01, q99) in enumerate(zip(sanitized_q01, sanitized_q99)):
+        if abs(q99 - q01) < min_span:
+            sanitized_q01[i] = fallback_q01[i]
+            sanitized_q99[i] = fallback_q99[i]
+
+    return sanitized_q01, sanitized_q99
+
+
 def _load_robocasa_norm_stat(action_dim: int) -> dict:
-    # RoboCasa control is typically normalized to [-1, 1] for the first 7 dims.
+    # RoboCasa control is typically normalized to [-1, 1] for the 7 learned
+    # manipulator channels: ee xyz, ee rot xyz, gripper.
     q01_7 = [-1.0] * 7
     q99_7 = [1.0] * 7
 
@@ -25,6 +44,7 @@ def _load_robocasa_norm_stat(action_dim: int) -> dict:
         except Exception as exc:
             print(f"[WARN] Failed to load ROBOCASA_NORM_STATS_PATH={stats_path}: {exc}")
 
+    q01_7, q99_7 = _sanitize_quantiles(q01_7, q99_7)
     q01 = q01_7 + [0.0] * max(action_dim - 7, 0)
     q99 = q99_7 + [1.0] * max(action_dim - 7, 0)
     return {"q01": q01, "q99": q99}
@@ -35,7 +55,7 @@ va_robocasa_cfg.update(va_shared_cfg)
 
 va_robocasa_cfg.wan22_pretrained_model_name_or_path = os.getenv(
     "ROBOCASA_PRETRAINED_MODEL",
-    "/data/share/lijiang/ckpt/lingbot-va-posttrain-robotwin",
+    "/data/share/lijiang/ckpt/lingbot-va-base",
 )
 
 va_robocasa_cfg.attn_window = 72
@@ -61,8 +81,12 @@ va_robocasa_cfg.action_num_inference_steps = 50
 va_robocasa_cfg.snr_shift = 5.0
 va_robocasa_cfg.action_snr_shift = 1.0
 
-# Keep the transformer action channel size at 30 for checkpoint compatibility,
-# while only wiring the RoboCasa manipulation channels (first 7 dims).
+# RoboCasa raw action layout comes from lerobot/meta/modality.json:
+#   0:4 base_motion, 4:5 control_mode, 5:8 ee_position,
+#   8:11 ee_rotation, 11:12 gripper_close.
+# We only learn the 7 manipulator channels and map them into the first 7 model
+# action channels for checkpoint compatibility.
+va_robocasa_cfg.raw_action_channel_ids = [5, 6, 7, 8, 9, 10, 11]
 va_robocasa_cfg.used_action_channel_ids = list(range(0, 7))
 inverse_used_action_channel_ids = [
     len(va_robocasa_cfg.used_action_channel_ids)

@@ -34,7 +34,7 @@ except:
 __all__ = ['WanTransformer3DModel']
 
 
-def custom_sdpa(q, k, v):
+def custom_sdpa(q, k, v): #维度转换
     out = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2),
                                          v.transpose(1, 2))
     return out.transpose(1, 2)
@@ -61,7 +61,7 @@ class FlexAttnFunc(nn.Module):
         value: torch.Tensor,
         dtype=torch.bfloat16,
     ) -> torch.Tensor:
-        q_varlen = rearrange(query[0], "s n d -> 1 n s d")
+        q_varlen = rearrange(query[0], "s n d -> 1 n s d") 
         k_varlen = rearrange(key[0], "s n d -> 1 n s d")
         v_varlen = rearrange(value[0], "s n d -> 1 n s d")
 
@@ -105,15 +105,22 @@ class FlexAttnFunc(nn.Module):
         B, _, L_F, L_H, L_W = latent_shape
         _, _, A_F, A_H, A_W = action_shape
 
-        latent_seq_id = torch.arange(B)[:, None, None, None].\
-            expand(-1, L_F // patch_size[0], L_H // patch_size[1], L_W // patch_size[2]).flatten()
+        #torch.arange(B)：生成 [0, 1, 2, ... B-1]，代表每个样本的编号,增加维度，变成 (B, 1, 1, 1)
+        latent_seq_id = (
+            torch.arange(B)[:, None, None, None]
+            .expand(-1, L_F // patch_size[0], L_H // patch_size[1], L_W // patch_size[2])
+            .flatten()
+        )
         action_seq_id = torch.arange(B)[:, None, None, None].expand(-1, A_F, A_H, A_W).flatten()
+
+        #把视频（Latent）和动作（Action）的 ID 拼在一起
         seq_ids = torch.cat([latent_seq_id] * 2 + [action_seq_id] * 2)
 
         latent_frame_id = torch.arange(L_F)[None, :, None, None].expand(B, -1, L_H // patch_size[1], L_W // patch_size[2])[None].flatten()
         action_frame_id = torch.arange(A_F)[None, :, None, None].expand(B, -1, A_H, A_W)[None].flatten()
         frame_ids = torch.cat([latent_frame_id // chunk_size * 2] * 2 + [action_frame_id // chunk_size * 2 + 1] * 2)
 
+        #噪声 ID ：区分干净的帧（0）和有噪声的帧（1），视频和动作分别处理
         noise_ids = torch.cat(
             [
                 torch.zeros_like(latent_frame_id),
@@ -122,17 +129,18 @@ class FlexAttnFunc(nn.Module):
                 torch.ones_like(action_frame_id),
             ]
         )
-
+        #value=-1：把填充出来的部分标记为 -1
         seq_ids = F.pad(seq_ids, (0, padded_length), value=-1)
         frame_ids = F.pad(frame_ids, (0, padded_length), value=-1)
         noise_ids = F.pad(noise_ids, (0, padded_length), value=-1)
 
         mask_mod = FlexAttnFunc._get_mask_mod(seq_ids.long().to(device), frame_ids.long().to(device), noise_ids.long().to(device), window_size)
+        #扫描整个序列，生成一个稀疏的块状掩码。
         block_mask = FlexAttnFunc.compiled_create_block_mask(
                 mask_mod, 1, 1, len(seq_ids), len(seq_ids), device=device, _compile=True
             )
         FlexAttnFunc.attention_mask = block_mask
-
+        #Cross Attention Mask
         text_seq_ids = torch.arange(B)[:, None].expand(-1, 512).flatten()
         mask_mod_cross = FlexAttnFunc._get_cross_mask_mod(seq_ids.long().to(device), text_seq_ids.long().to(device))
         block_mask_cross = FlexAttnFunc.compiled_create_block_mask(

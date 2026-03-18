@@ -2,8 +2,8 @@
 """Estimate RoboCasa action quantiles for LingBot-VA configs.
 
 This script scans LeRobot parquet files and computes approximate q01/q99 stats
-for RoboCasa actions (default first 7 dims), then expands them to a 30-dim
-format compatible with LingBot-VA action channel mapping.
+for RoboCasa manipulator actions, then expands them to a 30-dim format
+compatible with LingBot-VA action channel mapping.
 """
 
 from __future__ import annotations
@@ -14,6 +14,19 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+
+def _parse_int_list(csv_value: str) -> list[int]:
+    values = [v.strip() for v in csv_value.split(",") if v.strip()]
+    if not values:
+        raise ValueError("action index list is empty")
+
+    parsed = [int(v) for v in values]
+    if len(parsed) != len(set(parsed)):
+        raise ValueError(f"action indices must be unique, got: {parsed}")
+    if min(parsed) < 0:
+        raise ValueError(f"action indices must be non-negative, got: {parsed}")
+    return parsed
 
 
 def _parse_args() -> argparse.Namespace:
@@ -39,10 +52,13 @@ def _parse_args() -> argparse.Namespace:
         help="Parquet column name for action vectors.",
     )
     parser.add_argument(
-        "--used-action-dim",
-        type=int,
-        default=7,
-        help="How many leading action dims to compute quantiles for.",
+        "--action-indices",
+        type=str,
+        default="5,6,7,8,9,10,11",
+        help=(
+            "Comma-separated raw RoboCasa action indices to normalize. "
+            "Default selects manipulator channels: ee xyz, ee rot xyz, gripper."
+        ),
     )
     parser.add_argument(
         "--target-action-dim",
@@ -61,6 +77,12 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=42,
         help="Random seed for per-file sampling.",
+    )
+    parser.add_argument(
+        "--min-span",
+        type=float,
+        default=1e-3,
+        help="Minimum allowed q99-q01 per selected action dim before falling back to [-1, 1].",
     )
     return parser.parse_args()
 
@@ -107,6 +129,8 @@ def _load_actions_from_parquet(
 def main() -> int:
     args = _parse_args()
     rng = np.random.default_rng(args.seed)
+    action_indices = _parse_int_list(args.action_indices)
+    used_action_dim = len(action_indices)
 
     parquet_files = _find_parquet_files(args.dataset_root)
     if not parquet_files:
@@ -126,15 +150,15 @@ def main() -> int:
             print(f"[WARN] skip {p}: {exc}")
             continue
 
-        if actions.shape[1] < args.used_action_dim:
+        if actions.shape[1] <= max(action_indices):
             print(
-                f"[WARN] skip {p}: action dim {actions.shape[1]} < used_action_dim {args.used_action_dim}"
+                f"[WARN] skip {p}: action dim {actions.shape[1]} does not cover indices {action_indices}"
             )
             continue
 
         valid_files += 1
         total_rows += actions.shape[0]
-        actions = actions[:, : args.used_action_dim]
+        actions = actions[:, action_indices]
 
         if actions.shape[0] > args.max_rows_per_file:
             idx = rng.choice(actions.shape[0], size=args.max_rows_per_file, replace=False)
@@ -148,7 +172,20 @@ def main() -> int:
     q01_7 = np.quantile(stacked, 0.01, axis=0).astype(np.float64).tolist()
     q99_7 = np.quantile(stacked, 0.99, axis=0).astype(np.float64).tolist()
 
-    tail_dim = max(args.target_action_dim - args.used_action_dim, 0)
+    collapsed_dims = []
+    for i, (q01, q99) in enumerate(zip(q01_7, q99_7)):
+        if (q99 - q01) < args.min_span:
+            collapsed_dims.append(i)
+            q01_7[i] = -1.0
+            q99_7[i] = 1.0
+
+    if collapsed_dims:
+        print(
+            "[WARN] collapsed quantile span for selected dims "
+            f"{collapsed_dims}; fallback to [-1, 1] for those dims."
+        )
+
+    tail_dim = max(args.target_action_dim - used_action_dim, 0)
     q01_30 = q01_7 + [0.0] * tail_dim
     q99_30 = q99_7 + [1.0] * tail_dim
 
@@ -158,7 +195,8 @@ def main() -> int:
         "num_parquet_files_used": valid_files,
         "num_rows_total": int(total_rows),
         "num_rows_sampled": int(stacked.shape[0]),
-        "used_action_dim": int(args.used_action_dim),
+        "action_indices": action_indices,
+        "used_action_dim": int(used_action_dim),
         "target_action_dim": int(args.target_action_dim),
         "q01_7": q01_7,
         "q99_7": q99_7,
@@ -173,6 +211,7 @@ def main() -> int:
     print(f"saved: {output_path}")
     print(f"files used: {valid_files}/{len(parquet_files)}")
     print(f"rows sampled: {stacked.shape[0]} (from total rows: {total_rows})")
+    print(f"action_indices: {action_indices}")
     print(f"q01_7: {q01_7}")
     print(f"q99_7: {q99_7}")
     return 0

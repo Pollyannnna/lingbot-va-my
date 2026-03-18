@@ -33,7 +33,7 @@ echo "[2/3] Compute RoboCasa action quantiles"
 "${PYTHON_BIN}" script/compute_robocasa_norm_stats.py \
   --dataset-root "${DATASET_ROOT}" \
   --output "${STATS_OUTPUT}" \
-  --used-action-dim 7 \
+  --action-indices 5,6,7,8,9,10,11 \
   --target-action-dim 30 \
   --max-rows-per-file "${MAX_ROWS_PER_FILE}"
 

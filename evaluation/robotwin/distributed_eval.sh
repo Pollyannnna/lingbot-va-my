@@ -7,7 +7,7 @@
 # from cluster environment variables and assigns tasks accordingly.
 #
 # ACP Usage (single launch command for 8-node cluster):
-#   bash /data/250010187/yeziyang1/lingbot-va/evaluation/robotwin/distributed_eval.sh \
+#   bash lingbot-va/evaluation/robotwin/distributed_eval.sh \
 #       results/full_eval 100 0
 #
 # The script auto-detects NODE_RANK from these env vars (in order):
@@ -23,6 +23,9 @@
 ###############################################################################
 # Note: do NOT use set -e here — health check failures should be handled explicitly
 set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+LINGBOT_VA_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # ═══════════════════════════════════════════════════════════════════════
 # 1. Auto-detect NODE_RANK from cluster environment
@@ -60,16 +63,41 @@ TEST_NUM=${2:-100}
 SEED=${3:-0}
 
 # ═══════════════════════════════════════════════════════════════════════
-# 3. Cluster Configuration (ADJUST FOR YOUR SETUP)
+# 3. Cluster Configuration (override with env vars if needed)
 # ═══════════════════════════════════════════════════════════════════════
-NUM_NODES=8
-GPUS_PER_NODE=8
+NUM_NODES=${NUM_NODES:-8}
+GPUS_PER_NODE=${GPUS_PER_NODE:-8}
 
-CONDA_BASE="/data/250010187/yeziyang1/miniconda3"
+find_conda_base() {
+    local candidates=()
+    local base=""
+
+    [ -n "${CONDA_BASE:-}" ] && candidates+=("${CONDA_BASE}")
+    candidates+=(/root/miniconda3 /root/anaconda3)
+
+    if command -v conda >/dev/null 2>&1; then
+        base="$(conda info --base 2>/dev/null || true)"
+        [ -n "${base}" ] && candidates+=("${base}")
+    fi
+
+    for base in "${candidates[@]}"; do
+        if [ -x "${base}/envs/lingbotva/bin/python" ] && [ -x "${base}/envs/robotwin/bin/python" ]; then
+            echo "${base}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+CONDA_BASE="$(find_conda_base || true)"
 SERVER_PYTHON="${CONDA_BASE}/envs/lingbotva/bin/python"
 CLIENT_PYTHON="${CONDA_BASE}/envs/robotwin/bin/python"
 
-LINGBOT_VA_ROOT="/data/250010187/yeziyang1/lingbot-va"
+if [ ! -x "${SERVER_PYTHON}" ] || [ ! -x "${CLIENT_PYTHON}" ]; then
+    echo "ERROR: Cannot find LingBot-VA/RobotWin Python envs under CONDA_BASE=${CONDA_BASE}" >&2
+    echo "Tried CONDA_BASE, /root/miniconda3, /root/anaconda3, and conda info --base." >&2
+    exit 1
+fi
 
 BASE_WS_PORT=29556
 BASE_MASTER_PORT=29700
@@ -77,9 +105,9 @@ MAX_WAIT_SECS=900       # 15 min: large models (20GB+) take 5-10 min to load
 HEALTH_INTERVAL=30     # Print a dot every 30s to show progress
 
 # ═══════════════════════════════════════════════════════════════════════
-# 4. All 50 RoboTwin Tasks
+# 4. Task Set
 # ═══════════════════════════════════════════════════════════════════════
-ALL_TASKS=(
+DEFAULT_TASKS=(
   stack_bowls_three handover_block hanging_mug scan_object
   lift_pot put_object_cabinet stack_blocks_three place_shoe
   adjust_bottle place_mouse_pad dump_bin_bigbin move_pillbottle_pad
@@ -94,7 +122,23 @@ ALL_TASKS=(
   place_object_scale place_a2b_left grab_roller place_dual_shoes
   place_empty_cup blocks_ranking_rgb
 )
-TOTAL_TASKS=${#ALL_TASKS[@]}
+
+TASKS=("${DEFAULT_TASKS[@]}")
+TASK_LIST_FILE=${TASK_LIST_FILE:-}
+
+if [ -n "${TASK_LIST_FILE}" ]; then
+    if [ ! -f "${TASK_LIST_FILE}" ]; then
+        echo "ERROR: TASK_LIST_FILE not found: ${TASK_LIST_FILE}" >&2
+        exit 1
+    fi
+    mapfile -t TASKS < <(sed 's/#.*//' "${TASK_LIST_FILE}" | xargs -n1 echo 2>/dev/null | sed '/^$/d')
+    if [ ${#TASKS[@]} -eq 0 ]; then
+        echo "ERROR: No tasks found in TASK_LIST_FILE=${TASK_LIST_FILE}" >&2
+        exit 1
+    fi
+fi
+
+TOTAL_TASKS=${#TASKS[@]}
 
 # ═══════════════════════════════════════════════════════════════════════
 # 5. Environment Setup (from test.sh)
@@ -117,6 +161,22 @@ apt-get install -y -qq libgl1-mesa-glx libglib2.0-0 librdmacm-dev libibverbs-dev
 mkdir -p /usr/share/glvnd/egl_vendor.d /etc/glvnd/egl_vendor.d 2>/dev/null || true
 ${CLIENT_PYTHON} -m pip install -q "setuptools<81.0.0" "pillow<12.0.0" 2>/dev/null || true
 
+ensure_save_root_writable() {
+    if ! mkdir -p "${SAVE_ROOT}" 2>/dev/null; then
+        echo "ERROR: Cannot create SAVE_ROOT=${SAVE_ROOT}" >&2
+        exit 1
+    fi
+
+    local probe="${SAVE_ROOT}/.write_test_${MY_NODE_RANK}_$$"
+    if ! : > "${probe}" 2>/dev/null; then
+        echo "ERROR: SAVE_ROOT is not writable: ${SAVE_ROOT}" >&2
+        exit 1
+    fi
+    rm -f "${probe}"
+}
+
+ensure_save_root_writable
+
 # ═══════════════════════════════════════════════════════════════════════
 # 6. Calculate Task Assignment
 # ═══════════════════════════════════════════════════════════════════════
@@ -129,16 +189,45 @@ if [ $START_IDX -ge $TOTAL_TASKS ]; then
     exit 0
 fi
 NUM_MY_TASKS=$(( END_IDX - START_IDX ))
+if [ ${NUM_MY_TASKS} -gt ${GPUS_PER_NODE} ]; then
+    echo "ERROR: Node ${MY_NODE_RANK} was assigned ${NUM_MY_TASKS} tasks, but GPUS_PER_NODE=${GPUS_PER_NODE}." >&2
+    echo "Use more nodes, a smaller TASK_LIST_FILE, or a larger GPUS_PER_NODE value." >&2
+    exit 1
+fi
 
 echo "═══════════════════════════════════════════════════════════════"
-echo "  Node ${MY_NODE_RANK}/${NUM_NODES} | Tasks ${START_IDX}..$(( END_IDX - 1 )) (${NUM_MY_TASKS} tasks)"
+echo "  Node ${MY_NODE_RANK}/${NUM_NODES} | GPUs ${GPUS_PER_NODE} | Tasks ${START_IDX}..$(( END_IDX - 1 )) (${NUM_MY_TASKS} tasks)"
 echo "  Save: ${SAVE_ROOT} | Episodes: ${TEST_NUM} | Seed: ${SEED}"
-echo "  My tasks: ${ALL_TASKS[@]:$START_IDX:$NUM_MY_TASKS}"
+if [ -n "${TASK_LIST_FILE}" ]; then
+    echo "  Task list: ${TASK_LIST_FILE} (${TOTAL_TASKS} tasks)"
+else
+    echo "  Task list: default (${TOTAL_TASKS} tasks)"
+fi
+echo "  My tasks: ${TASKS[@]:$START_IDX:$NUM_MY_TASKS}"
 echo "═══════════════════════════════════════════════════════════════"
 
 LOG_DIR="${LINGBOT_VA_ROOT}/logs/node_${MY_NODE_RANK}"
 mkdir -p "${LOG_DIR}"
 BATCH_TIME=$(date +%Y%m%d_%H%M%S)
+ST_SEED=$(( 10000 * (1 + SEED) ))
+
+render_preflight() {
+    local log_file="${LOG_DIR}/render_preflight_${BATCH_TIME}.log"
+    echo ""
+    echo "── Render Preflight: validating Sapien renderer on GPU 0 ───────────────"
+    if (
+        cd "${LINGBOT_VA_ROOT}"
+        CUDA_VISIBLE_DEVICES=0 "${CLIENT_PYTHON}" -m evaluation.robotwin.test_render
+    ) > "${log_file}" 2>&1; then
+        echo "  Render preflight passed."
+        return 0
+    fi
+    echo "FATAL: Render preflight failed on node ${MY_NODE_RANK}. See ${log_file}" >&2
+    tail -20 "${log_file}" 2>/dev/null | sed "s/^/    /" >&2
+    return 1
+}
+
+render_preflight || exit 1
 
 # ═══════════════════════════════════════════════════════════════════════
 # 7. Helper: Wait for Server Health
@@ -172,6 +261,13 @@ sys.exit(0 if ok else 1)
     return 1
 }
 
+task_outputs_exist() {
+    local task=$1
+    local metrics_file="${SAVE_ROOT}/stseed-${ST_SEED}/metrics/${task}/res.json"
+    local summary_file="${SAVE_ROOT}/stseed-${ST_SEED}/detailed_logs/${task}/episode_summary.csv"
+    [ -s "${metrics_file}" ] && [ -s "${summary_file}" ]
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # 8. Phase 1: Start Servers
 # ═══════════════════════════════════════════════════════════════════════
@@ -186,7 +282,7 @@ declare -A TASK_WS_PORT TASK_GPU
 
 for local_i in $(seq 0 $(( NUM_MY_TASKS - 1 ))); do
     global_i=$(( START_IDX + local_i ))
-    task="${ALL_TASKS[$global_i]}"
+    task="${TASKS[$global_i]}"
     gpu=$local_i
     ws_port=$(( BASE_WS_PORT + local_i ))
     master_port=$(( BASE_MASTER_PORT + local_i ))
@@ -216,7 +312,7 @@ HEALTH_RESULTS_DIR="${LOG_DIR}/health_${BATCH_TIME}"
 mkdir -p "${HEALTH_RESULTS_DIR}"
 
 for local_i in $(seq 0 $(( NUM_MY_TASKS - 1 ))); do
-    task="${ALL_TASKS[$(( START_IDX + local_i ))]}"
+    task="${TASKS[$(( START_IDX + local_i ))]}"
     log="${LOG_DIR}/server_${task}_${BATCH_TIME}.log"
     result_file="${HEALTH_RESULTS_DIR}/${task}.result"
     (
@@ -237,7 +333,7 @@ done
 # Count results
 READY=0
 for local_i in $(seq 0 $(( NUM_MY_TASKS - 1 ))); do
-    task="${ALL_TASKS[$(( START_IDX + local_i ))]}"
+    task="${TASKS[$(( START_IDX + local_i ))]}"
     result_file="${HEALTH_RESULTS_DIR}/${task}.result"
     [ -f "$result_file" ] && [ "$(cat $result_file)" = "ok" ] && READY=$(( READY + 1 ))
 done
@@ -261,7 +357,7 @@ echo "  Timing log mode: ${TIMING_LOG_MODE} (KEEP_CALL_DETAILS=${KEEP_CALL_DETAI
 
 CLIENT_PIDS=()
 for local_i in $(seq 0 $(( NUM_MY_TASKS - 1 ))); do
-    task="${ALL_TASKS[$(( START_IDX + local_i ))]}"
+    task="${TASKS[$(( START_IDX + local_i ))]}"
     gpu=${TASK_GPU[$task]}
     ws_port=${TASK_WS_PORT[$task]}
     log="${LOG_DIR}/client_${task}_${BATCH_TIME}.log"
@@ -303,9 +399,14 @@ echo "── Phase 4: Waiting for clients to finish ─────────�
 
 FAILS=0
 for i in "${!CLIENT_PIDS[@]}"; do
-    task="${ALL_TASKS[$(( START_IDX + i ))]}"
+    task="${TASKS[$(( START_IDX + i ))]}"
     if wait ${CLIENT_PIDS[$i]} 2>/dev/null; then
-        echo "  ✓ ${task}"
+        if task_outputs_exist "${task}"; then
+            echo "  ✓ ${task}"
+        else
+            echo "  ✗ ${task} (missing result artifacts)"
+            FAILS=$(( FAILS + 1 ))
+        fi
     else
         echo "  ✗ ${task} (exit=$?)"
         FAILS=$(( FAILS + 1 ))
@@ -320,7 +421,13 @@ for pid in "${SERVER_PIDS[@]}"; do kill -9 $pid 2>/dev/null || true; done
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
-echo "  Node ${MY_NODE_RANK} DONE! Tasks: ${NUM_MY_TASKS}, Failures: ${FAILS}"
+if [ ${FAILS} -gt 0 ]; then
+    echo "  Node ${MY_NODE_RANK} FAILED! Tasks: ${NUM_MY_TASKS}, Failures: ${FAILS}"
+else
+    echo "  Node ${MY_NODE_RANK} DONE! Tasks: ${NUM_MY_TASKS}, Failures: ${FAILS}"
+fi
 echo "  Results: ${SAVE_ROOT}/"
 echo "  Logs:    ${LOG_DIR}/"
 echo "═══════════════════════════════════════════════════════════════"
+
+[ ${FAILS} -eq 0 ] || exit 1

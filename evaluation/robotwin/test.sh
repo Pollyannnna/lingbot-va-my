@@ -1,5 +1,8 @@
 export NVIDIA_DRIVER_CAPABILITIES=all
 
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+LINGBOT_VA_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
 #精准拦截图形库，解决 SAPIEN 渲染崩溃
 export LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libEGL.so.1 /usr/lib/x86_64-linux-gnu/libGL.so.1"
 
@@ -20,7 +23,7 @@ export EGL_PLATFORM=surfaceless
 # 4. 修复 Python 包版本冲突 (pkg_resources 和 pillow)
 python -m pip install "setuptools<81.0.0" "pillow<12.0.0"
 
-cd /data/250010187/yeziyang1/lingbot-va
+cd "${LINGBOT_VA_ROOT}"
 
 # 5. 动态修改子脚本显存占用
 sed -i 's/XLA_PYTHON_CLIENT_MEM_FRACTION=0.9/XLA_PYTHON_CLIENT_MEM_FRACTION=0.5/g' evaluation/robotwin/launch_client_with_logging.sh

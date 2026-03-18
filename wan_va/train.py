@@ -5,6 +5,9 @@ import sys
 import time
 from pathlib import Path
 import json
+from datetime import datetime, timezone
+import random
+import re
 
 import torch
 import torch.distributed as dist
@@ -18,6 +21,7 @@ from torch.distributed.checkpoint.state_dict import (
     StateDictOptions,
 )
 from safetensors.torch import save_file, load_file
+import numpy as np
 
 try:
     import swanlab
@@ -65,32 +69,41 @@ class Trainer:
         )
         if self.enable_swanlab and config.rank == 0:
             if swanlab is None:
-                raise ImportError(
+                logger.warning(
                     "SwanLab logging is enabled but `swanlab` is not installed. "
-                    "Please run `pip install swanlab`."
+                    "Continuing without SwanLab logging."
                 )
+                self.enable_swanlab = False
+            else:
+                swanlab_workspace = os.getenv(
+                    "SWANLAB_WORKSPACE", os.getenv("WANDB_TEAM_NAME", "")
+                ).strip()
+                init_kwargs = {
+                    "project": os.getenv(
+                        "SWANLAB_PROJECT", os.getenv("WANDB_PROJECT", "va_robotwin")
+                    ),
+                    "config": _safe_config_for_logging(config),
+                }
+                if swanlab_workspace:
+                    init_kwargs["workspace"] = swanlab_workspace
 
-            swanlab_api_key = os.getenv("SWANLAB_API_KEY", "").strip()
-            if swanlab_api_key:
                 try:
-                    swanlab.login(api_key=swanlab_api_key)
-                except TypeError:
-                    swanlab.login(swanlab_api_key)
-
-            self.swanlab = swanlab
-            swanlab_workspace = os.getenv(
-                "SWANLAB_WORKSPACE", os.getenv("WANDB_TEAM_NAME", "")
-            ).strip()
-            init_kwargs = {
-                "project": os.getenv(
-                    "SWANLAB_PROJECT", os.getenv("WANDB_PROJECT", "va_robotwin")
-                ),
-                "config": _safe_config_for_logging(config),
-            }
-            if swanlab_workspace:
-                init_kwargs["workspace"] = swanlab_workspace
-            self.swanlab.init(**init_kwargs)
-            logger.info("SwanLab logging enabled")
+                    swanlab_api_key = os.getenv("SWANLAB_API_KEY", "").strip()
+                    if swanlab_api_key:
+                        try:
+                            swanlab.login(api_key=swanlab_api_key)
+                        except TypeError:
+                            swanlab.login(swanlab_api_key)
+                    self.swanlab = swanlab
+                    self.swanlab.init(**init_kwargs)
+                    logger.info("SwanLab logging enabled")
+                except Exception as exc:
+                    self.swanlab = None
+                    self.enable_swanlab = False
+                    logger.warning(
+                        "Failed to initialize SwanLab (%s). Continuing without SwanLab logging.",
+                        exc,
+                    )
         self.step = 0
         self.config = config
         self.device = torch.device(f"cuda:{config.local_rank}")
@@ -194,6 +207,8 @@ class Trainer:
 
         self.gradient_accumulation_steps = getattr(config, 'gradient_accumulation_steps', 1)
         self.train_loader_iter = None
+        self.train_data_epoch = 0
+        self.batches_seen_in_epoch = 0
         self.profile_steps = max(
             0,
             int(os.getenv("ROBOCASA_PROFILE_STEPS", "0")),
@@ -216,6 +231,23 @@ class Trainer:
             "checkpoint",
             "total",
         ]
+        self.timing_log_enabled = os.getenv("ROBOCASA_TIMING_LOG", "0") != "0"
+        self.timing_log_every = max(
+            1,
+            int(os.getenv("ROBOCASA_TIMING_LOG_EVERY", "1")),
+        )
+        default_timing_dir = self.save_dir.parent / "monitor"
+        self.timing_log_dir = Path(
+            os.getenv("ROBOCASA_TIMING_LOG_DIR", str(default_timing_dir))
+        )
+        self.timing_log_dir.mkdir(parents=True, exist_ok=True)
+        self.rank_timing_log_path = self.timing_log_dir / f"timing_rank_{config.rank:03d}.jsonl"
+        self.aggregate_timing_log_path = self.timing_log_dir / "timing_aggregate_rank0.jsonl"
+        self.timing_log_rank0_only = os.getenv("ROBOCASA_TIMING_RANK0_ONLY", "0") != "0"
+        self.timing_console_every = max(
+            1,
+            int(os.getenv("ROBOCASA_TIMING_CONSOLE_EVERY", "20")),
+        )
         if self.profile_steps > 0 and self.config.rank == 0:
             logger.info(
                 "Step profiling enabled: start_step=%s profile_steps=%s cuda_sync=%s",
@@ -223,13 +255,94 @@ class Trainer:
                 self.profile_steps,
                 self.profile_cuda_sync,
             )
-        # if hasattr(config, 'resume_from') and config.resume_from:
-        #     self._load_training_state(config.resume_from)
+        if self.timing_log_enabled and self.config.rank == 0:
+            logger.info(
+                "Timing monitor enabled: every=%s rank0_only=%s dir=%s",
+                self.timing_log_every,
+                self.timing_log_rank0_only,
+                self.timing_log_dir,
+            )
+        if hasattr(config, 'resume_from') and config.resume_from:
+            self._load_training_state(config.resume_from)
 
     def _profiling_enabled_for_current_step(self):
         if self.profile_steps <= 0:
             return False
         return self.profile_start_step <= self.step < (self.profile_start_step + self.profile_steps)
+
+    def _runtime_state_path(self, checkpoint_dir: Path) -> Path:
+        return checkpoint_dir / f"runtime_state_rank_{self.config.rank:03d}.pt"
+
+    def _set_scheduler_to_step(self, step: int):
+        self.lr_scheduler.step(step)
+
+    def _reset_train_iterator(self):
+        if hasattr(self.train_loader.sampler, 'set_epoch'):
+            self.train_loader.sampler.set_epoch(self.train_data_epoch)
+        self.train_loader_iter = iter(self.train_loader)
+
+    def _restore_data_iterator_position(self):
+        if self.batches_seen_in_epoch <= 0:
+            self.train_loader_iter = None
+            return
+
+        self._reset_train_iterator()
+        skipped = 0
+        while skipped < self.batches_seen_in_epoch:
+            try:
+                next(self.train_loader_iter)
+                skipped += 1
+            except StopIteration:
+                if self.config.rank == 0:
+                    logger.warning(
+                        "Failed to restore dataloader position exactly at epoch=%s batch=%s; restarting current epoch.",
+                        self.train_data_epoch,
+                        self.batches_seen_in_epoch,
+                    )
+                self.batches_seen_in_epoch = 0
+                self._reset_train_iterator()
+                break
+
+    def _collect_runtime_state(self):
+        runtime_state = {
+            "step": int(self.step),
+            "train_data_epoch": int(self.train_data_epoch),
+            "batches_seen_in_epoch": int(self.batches_seen_in_epoch),
+            "torch_rng_state": torch.get_rng_state(),
+            "python_random_state": random.getstate(),
+            "numpy_random_state": np.random.get_state(),
+        }
+        if self.device.type == "cuda":
+            runtime_state["cuda_rng_state"] = torch.cuda.get_rng_state(self.device)
+        return runtime_state
+
+    def _restore_runtime_state(self, runtime_state):
+        self.train_data_epoch = int(runtime_state.get("train_data_epoch", 0))
+        self.batches_seen_in_epoch = int(runtime_state.get("batches_seen_in_epoch", 0))
+
+        torch_rng_state = runtime_state.get("torch_rng_state")
+        if torch_rng_state is not None:
+            torch.set_rng_state(torch_rng_state)
+
+        python_random_state = runtime_state.get("python_random_state")
+        if python_random_state is not None:
+            random.setstate(python_random_state)
+
+        numpy_random_state = runtime_state.get("numpy_random_state")
+        if numpy_random_state is not None:
+            np.random.set_state(numpy_random_state)
+
+        cuda_rng_state = runtime_state.get("cuda_rng_state")
+        if cuda_rng_state is not None and self.device.type == "cuda":
+            torch.cuda.set_rng_state(cuda_rng_state, self.device)
+
+        self._restore_data_iterator_position()
+
+    def _infer_resume_step_from_path(self, checkpoint_path):
+        match = re.search(r"checkpoint_step_(\d+)", str(checkpoint_path))
+        if not match:
+            return None
+        return int(match.group(1))
 
     def _sync_for_timing(self, enabled):
         if not enabled:
@@ -249,7 +362,35 @@ class Trainer:
         for key, value in source.items():
             target[key] = target.get(key, 0.0) + float(value)
 
-    def _log_profile_times(self, step_id, stage_times):
+    def _append_jsonl(self, path: Path, payload: dict):
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=True, sort_keys=True) + "\n")
+
+    def _current_utc_iso(self):
+        return datetime.now(timezone.utc).isoformat()
+
+    def _collect_cuda_memory_stats(self):
+        if self.device.type != "cuda":
+            return {}
+        free_bytes, total_bytes = torch.cuda.mem_get_info(self.device)
+        return {
+            "memory_allocated_gb": round(torch.cuda.memory_allocated(self.device) / 1024**3, 4),
+            "memory_reserved_gb": round(torch.cuda.memory_reserved(self.device) / 1024**3, 4),
+            "max_memory_allocated_gb": round(torch.cuda.max_memory_allocated(self.device) / 1024**3, 4),
+            "max_memory_reserved_gb": round(torch.cuda.max_memory_reserved(self.device) / 1024**3, 4),
+            "memory_free_gb": round(free_bytes / 1024**3, 4),
+            "memory_total_gb": round(total_bytes / 1024**3, 4),
+        }
+
+    def _all_gather_scalar_list(self, value: float):
+        local_value = torch.tensor([value], device=self.device, dtype=torch.float64)
+        if not dist.is_initialized():
+            return [float(value)]
+        gathered = [torch.zeros_like(local_value) for _ in range(self.config.world_size)]
+        dist.all_gather(gathered, local_value)
+        return [float(v.item()) for v in gathered]
+
+    def _aggregate_stage_times(self, stage_times: dict):
         stage_names = [name for name in self.profile_stage_order if name in stage_times]
         local_values = torch.tensor(
             [stage_times[name] for name in stage_names],
@@ -262,31 +403,96 @@ class Trainer:
             dist.all_reduce(mean_values, op=dist.ReduceOp.SUM)
             mean_values /= self.config.world_size
             dist.all_reduce(max_values, op=dist.ReduceOp.MAX)
+        return (
+            stage_names,
+            {name: float(mean_values[idx].item()) for idx, name in enumerate(stage_names)},
+            {name: float(max_values[idx].item()) for idx, name in enumerate(stage_names)},
+        )
+
+    def _write_timing_records(self, step_id, stage_times, meta):
+        if not self.timing_log_enabled:
+            return
+        if step_id % self.timing_log_every != 0:
+            return
+
+        memory_stats = self._collect_cuda_memory_stats()
+        local_payload = {
+            "ts_utc": self._current_utc_iso(),
+            "step": int(step_id),
+            "rank": int(self.config.rank),
+            "local_rank": int(self.config.local_rank),
+            "world_size": int(self.config.world_size),
+            "stage_times_s": {k: round(float(v), 6) for k, v in stage_times.items()},
+            "meta": meta,
+            "memory": memory_stats,
+        }
+        if not self.timing_log_rank0_only or self.config.rank == 0:
+            self._append_jsonl(self.rank_timing_log_path, local_payload)
+
+        stage_names, mean_times, max_times = self._aggregate_stage_times(stage_times)
+        total_values = self._all_gather_scalar_list(stage_times.get("total", 0.0))
+        max_reserved_values = self._all_gather_scalar_list(memory_stats.get("max_memory_reserved_gb", 0.0))
+        max_alloc_values = self._all_gather_scalar_list(memory_stats.get("max_memory_allocated_gb", 0.0))
+
+        if self.config.rank != 0:
+            return
+
+        slowest_rank = max(range(len(total_values)), key=lambda idx: total_values[idx])
+        max_reserved_rank = max(range(len(max_reserved_values)), key=lambda idx: max_reserved_values[idx])
+        max_alloc_rank = max(range(len(max_alloc_values)), key=lambda idx: max_alloc_values[idx])
+
+        aggregate_payload = {
+            "ts_utc": self._current_utc_iso(),
+            "step": int(step_id),
+            "stage_mean_s": {k: round(v, 6) for k, v in mean_times.items()},
+            "stage_max_s": {k: round(v, 6) for k, v in max_times.items()},
+            "slowest_total_rank": slowest_rank,
+            "slowest_total_s": round(total_values[slowest_rank], 6),
+            "max_reserved_rank": max_reserved_rank,
+            "max_reserved_gb": round(max_reserved_values[max_reserved_rank], 4),
+            "max_alloc_rank": max_alloc_rank,
+            "max_alloc_gb": round(max_alloc_values[max_alloc_rank], 4),
+            "rank0_meta": meta,
+        }
+        self._append_jsonl(self.aggregate_timing_log_path, aggregate_payload)
+        if step_id % self.timing_console_every == 0:
+            logger.info(
+                "[MONITOR step=%s] total_avg=%.3fs total_max=%.3fs slowest_rank=%s max_reserved=%.2fGB(rank=%s)",
+                step_id,
+                mean_times.get("total", 0.0),
+                max_times.get("total", 0.0),
+                slowest_rank,
+                max_reserved_values[max_reserved_rank],
+                max_reserved_rank,
+            )
+
+    def _log_profile_times(self, step_id, stage_times):
+        stage_names, mean_times, max_times = self._aggregate_stage_times(stage_times)
 
         if self.config.rank != 0:
             return
 
         parts = []
-        for idx, name in enumerate(stage_names):
+        for name in stage_names:
             parts.append(
-                f"{name}=avg{mean_values[idx].item():.3f}s/max{max_values[idx].item():.3f}s"
+                f"{name}=avg{mean_times[name]:.3f}s/max{max_times[name]:.3f}s"
             )
         logger.info("[PROFILE step=%s] %s", step_id, " | ".join(parts))
     
     def _get_next_batch(self):
         """Get next batch from iterator, reset if epoch is finished."""
         if self.train_loader_iter is None:
-            self.train_loader_iter = iter(self.train_loader)
+            self._reset_train_iterator()
         
         try:
             batch = next(self.train_loader_iter)
         except StopIteration:
             # Reset sampler and iterator when epoch finishes
-            if hasattr(self.train_loader.sampler, 'set_epoch'):
-                self.train_loader.sampler.set_epoch(self.train_loader.sampler.epoch + 1)
-            self.train_loader_iter = iter(self.train_loader)
+            self.train_data_epoch += 1
+            self.batches_seen_in_epoch = 0
+            self._reset_train_iterator()
             batch = next(self.train_loader_iter)
-        
+        self.batches_seen_in_epoch += 1
         return batch
 
     @torch.no_grad()
@@ -460,6 +666,13 @@ class Trainer:
             'latent_loss': latent_loss.detach(),
             'action_loss': action_loss.detach(),
             'profile_times': stage_times,
+            'monitor_meta': {
+                'chunk_size': int(input_dict['chunk_size']),
+                'window_size': int(input_dict['window_size']),
+                'latents_shape': list(batch['latents'].shape),
+                'actions_shape': list(batch['actions'].shape),
+                'text_emb_shape': list(batch['text_emb'].shape),
+            },
         }
         
         # Only update weights after accumulating gradients
@@ -489,16 +702,20 @@ class Trainer:
                 options=StateDictOptions(full_state_dict=True, cpu_offload=True),
             )
             state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in state_dict.items()}
-            # optim_state = get_optimizer_state_dict(
-            #         self.transformer, self.optimizer,
-            #         options=StateDictOptions(full_state_dict=True, cpu_offload=True),
-            #     )
+            optim_state = get_optimizer_state_dict(
+                self.transformer,
+                self.optimizer,
+                options=StateDictOptions(full_state_dict=True, cpu_offload=True),
+            )
+            runtime_state = self._collect_runtime_state()
+
+            checkpoint_dir = self.save_dir / f"checkpoint_step_{self.step}"
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            runtime_state_path = self._runtime_state_path(checkpoint_dir)
+            torch.save(runtime_state, runtime_state_path)
 
             # Only rank 0 saves the checkpoint
             if self.config.rank == 0:
-                checkpoint_dir = self.save_dir / f"checkpoint_step_{self.step}"
-                checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
                 # Save transformer in the same format as pretrained model
                 transformer_dir = checkpoint_dir / "transformer"
                 transformer_dir.mkdir(parents=True, exist_ok=True)
@@ -517,14 +734,17 @@ class Trainer:
                 with open(config_file, 'w') as f:
                     json.dump(config_dict, f, indent=2)
 
-                # # Save optimizer state and training metadata in PyTorch format
-                # training_state_path = checkpoint_dir / "training_state.pt"
-                # logger.info(f"Saving training state to {training_state_path}")
-                # torch.save({
-                #     'step': self.step,
-                #     'optimizer_state_dict': optim_state,
-                #     'config': vars(self.config),
-                # }, training_state_path)
+                # Save optimizer, scheduler, and bookkeeping for exact resume.
+                training_state_path = checkpoint_dir / "training_state.pt"
+                logger.info(f"Saving training state to {training_state_path}")
+                torch.save({
+                    'step': self.step,
+                    'optimizer_state_dict': optim_state,
+                    'lr_scheduler_state_dict': self.lr_scheduler.state_dict(),
+                    'train_data_epoch': self.train_data_epoch,
+                    'batches_seen_in_epoch': self.batches_seen_in_epoch,
+                    'config': vars(self.config),
+                }, training_state_path)
 
                 logger.info(f"Checkpoint saved successfully at step {self.step}")
 
@@ -545,10 +765,24 @@ class Trainer:
         """Load training state (optimizer + step) after FSDP and optimizer creation."""
         checkpoint_dir = Path(checkpoint_path)
         training_state_path = checkpoint_dir / "training_state.pt"
+        runtime_state_path = self._runtime_state_path(checkpoint_dir)
 
         if not training_state_path.exists():
+            inferred_step = self._infer_resume_step_from_path(checkpoint_dir)
+            if inferred_step is not None:
+                self.step = inferred_step
+                self._set_scheduler_to_step(self.step)
+                if self.config.rank == 0:
+                    logger.warning(
+                        "Training state not found in %s. Warm-starting from weights only at inferred step=%s.",
+                        checkpoint_dir,
+                        inferred_step,
+                    )
+            if runtime_state_path.exists():
+                runtime_state = torch.load(runtime_state_path, map_location='cpu', weights_only=False)
+                self._restore_runtime_state(runtime_state)
             if self.config.rank == 0:
-                logger.warning(f"Training state not found: {training_state_path}, starting from step 0")
+                logger.warning(f"Training state not found: {training_state_path}, optimizer/scheduler will restart.")
             return
 
         if self.config.rank == 0:
@@ -564,6 +798,20 @@ class Trainer:
             options=StateDictOptions(full_state_dict=True, strict=False)
         )
         self.step = training_state.get('step', 0)
+        scheduler_state = training_state.get('lr_scheduler_state_dict')
+        if scheduler_state is not None:
+            self.lr_scheduler.load_state_dict(scheduler_state)
+        else:
+            self._set_scheduler_to_step(self.step)
+        self.train_data_epoch = int(training_state.get('train_data_epoch', 0))
+        self.batches_seen_in_epoch = int(training_state.get('batches_seen_in_epoch', 0))
+
+        if runtime_state_path.exists():
+            runtime_state = torch.load(runtime_state_path, map_location='cpu', weights_only=False)
+            self._restore_runtime_state(runtime_state)
+        else:
+            self.train_loader_iter = None
+            self._restore_data_iterator_position()
 
         if self.config.rank == 0:
             logger.info(f"Training state loaded, resuming from step {self.step}")
@@ -594,16 +842,20 @@ class Trainer:
 
         while self.step < self.config.num_steps:
             profile_enabled = self._profiling_enabled_for_current_step()
-            step_wall_start = self._time_mark(profile_enabled)
+            monitor_enabled = self.timing_log_enabled and (self.step % self.timing_log_every == 0)
+            timing_enabled = profile_enabled or monitor_enabled
+            if timing_enabled and self.device.type == "cuda":
+                torch.cuda.reset_peak_memory_stats(self.device)
+            step_wall_start = self._time_mark(timing_enabled)
 
             # Get next batch (handles epoch reset automatically)
-            stage_start = self._time_mark(profile_enabled)
+            stage_start = self._time_mark(timing_enabled)
             batch = self._get_next_batch()
-            if profile_enabled:
-                profile_accumulator["data_wait"] = profile_accumulator.get("data_wait", 0.0) + self._time_elapsed(stage_start, profile_enabled)
+            if timing_enabled:
+                profile_accumulator["data_wait"] = profile_accumulator.get("data_wait", 0.0) + self._time_elapsed(stage_start, timing_enabled)
             
-            losses = self._train_step(batch, step_in_accumulation, profile_enabled=profile_enabled)
-            if profile_enabled:
+            losses = self._train_step(batch, step_in_accumulation, profile_enabled=timing_enabled)
+            if timing_enabled:
                 self._merge_profile_times(profile_accumulator, losses.get("profile_times", {}))
             
             # Accumulate losses for logging
@@ -616,26 +868,26 @@ class Trainer:
                 lr = self.lr_scheduler.get_last_lr()[0]
 
                 # Average accumulated losses
-                stage_start = self._time_mark(profile_enabled)
+                stage_start = self._time_mark(timing_enabled)
                 latent_loss_show = dist_mean(torch.stack(accumulated_latent_losses).sum()).detach().cpu().item()
                 action_loss_show = dist_mean(torch.stack(accumulated_action_losses).sum()).detach().cpu().item()
                 max_latent_loss_show = dist_max(torch.stack(accumulated_latent_losses).sum()).detach().cpu().item()
                 max_action_loss_show = dist_max(torch.stack(accumulated_action_losses).sum()).detach().cpu().item()
-                if profile_enabled:
-                    profile_accumulator["metrics_sync"] = profile_accumulator.get("metrics_sync", 0.0) + self._time_elapsed(stage_start, profile_enabled)
+                if timing_enabled:
+                    profile_accumulator["metrics_sync"] = profile_accumulator.get("metrics_sync", 0.0) + self._time_elapsed(stage_start, timing_enabled)
 
                 # Clear accumulated losses
                 accumulated_latent_losses = []
                 accumulated_action_losses = []
                 step_in_accumulation = 0
 
-                stage_start = self._time_mark(profile_enabled)
+                stage_start = self._time_mark(timing_enabled)
                 torch.cuda.synchronize()
                 if self.step % self.config.gc_interval == 0:
                     torch.cuda.empty_cache()
                     gc.collect()
-                if profile_enabled:
-                    profile_accumulator["housekeeping"] = profile_accumulator.get("housekeeping", 0.0) + self._time_elapsed(stage_start, profile_enabled)
+                if timing_enabled:
+                    profile_accumulator["housekeeping"] = profile_accumulator.get("housekeeping", 0.0) + self._time_elapsed(stage_start, timing_enabled)
 
                 if self.config.rank == 0:
                     total_norm = losses['total_norm']
@@ -660,19 +912,26 @@ class Trainer:
                 self.step += 1
                 
                 if self.step % self.config.save_interval == 0:
-                    stage_start = self._time_mark(profile_enabled)
+                    stage_start = self._time_mark(timing_enabled)
                     if self.config.rank == 0:
                         logger.info(f"Starting save model at step {self.step}")
                     self.save_checkpoint()
-                    if profile_enabled:
-                        profile_accumulator["checkpoint"] = profile_accumulator.get("checkpoint", 0.0) + self._time_elapsed(stage_start, profile_enabled)
+                    if timing_enabled:
+                        profile_accumulator["checkpoint"] = profile_accumulator.get("checkpoint", 0.0) + self._time_elapsed(stage_start, timing_enabled)
 
+                if timing_enabled:
+                    profile_accumulator["total"] = profile_accumulator.get("total", 0.0) + self._time_elapsed(step_wall_start, timing_enabled)
+                    self._write_timing_records(
+                        self.step,
+                        dict(profile_accumulator),
+                        losses.get("monitor_meta", {}),
+                    )
                 if profile_enabled:
-                    profile_accumulator["total"] = profile_accumulator.get("total", 0.0) + self._time_elapsed(step_wall_start, profile_enabled)
                     self._log_profile_times(self.step, profile_accumulator)
+                if timing_enabled:
                     profile_accumulator = {}
-            elif profile_enabled:
-                profile_accumulator["total"] = profile_accumulator.get("total", 0.0) + self._time_elapsed(step_wall_start, profile_enabled)
+            elif timing_enabled:
+                profile_accumulator["total"] = profile_accumulator.get("total", 0.0) + self._time_elapsed(step_wall_start, timing_enabled)
 
         progress_bar.close()
         if self.step > 0 and self.step % self.config.save_interval != 0:

@@ -6,10 +6,6 @@ umask 007
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Historical name only. This script is now a pure torchrun launcher and does
-# not call sbatch/srun. Dataset preparation and latent extraction must already
-# be finished before running it.
-
 DEFAULT_ENV_PYTHON="/root/miniconda3/envs/lingbotva/bin/python"
 
 if [[ -z "${PYTHON_BIN:-}" ]]; then
@@ -21,45 +17,45 @@ if [[ -z "${PYTHON_BIN:-}" ]]; then
 else
   PYTHON_BIN="${PYTHON_BIN}"
 fi
+
 CONDA_ENV_NAME="${CONDA_ENV_NAME:-}"
 CONDA_ENV_PREFIX="${CONDA_ENV_PREFIX:-}"
 
-NGPU="${NGPU:-4}"
-NNODES="${NNODES:-16}"
+NGPU="${NGPU:-8}"
+NNODES="${NNODES:-8}"
 NODE_RANK="${NODE_RANK:-}"
 MASTER_ADDR="${MASTER_ADDR:-}"
-MASTER_PORT="${MASTER_PORT:-29521}"
+MASTER_PORT="${MASTER_PORT:-29501}"
 LOG_RANK="${LOG_RANK:-0}"
 TORCHFT_LIGHTHOUSE="${TORCHFT_LIGHTHOUSE:-http://localhost:29510}"
-CONFIG_NAME="${CONFIG_NAME:-robocasa_train}"
+CONFIG_NAME="${CONFIG_NAME:-robotwin_train}"
 
-DATASET_ROOT="${DATASET_ROOT:-/data/share/lijiang/data/robocasa365/target-human-50}"
-MODEL_ROOT="${MODEL_ROOT:-/data/share/lijiang/ckpt/lingbot-va-base}"
+DATASET_ROOT="${DATASET_ROOT:-/data/share/lijiang/data/robotwin-lingbotva/lerobot_robotwin_eef_clean_50}"
+MODEL_ROOT="${MODEL_ROOT:-/data/share/lijiang/ckpt/lingbot-va-posttrain-robotwin}"
 EMPTY_EMB_PATH="${EMPTY_EMB_PATH:-${DATASET_ROOT}/empty_emb.pt}"
-STATS_OUTPUT="${STATS_OUTPUT:-${DATASET_ROOT}/robocasa_action_stats_for_lingbotva.json}"
-SAVE_ROOT="${SAVE_ROOT:-/data/share/lijiang/yzy-exp/robocasa365-human50_bs64}"
+SAVE_ROOT="${SAVE_ROOT:-/data/share/lijiang/yzy-exp/robotwin-clean50}"
 
-ROBOCASA_ENABLE_SWANLAB="${ROBOCASA_ENABLE_SWANLAB:-1}"
-ROBOCASA_NUM_STEPS="${ROBOCASA_NUM_STEPS:-10000}"
-ROBOCASA_BATCH_SIZE="${ROBOCASA_BATCH_SIZE:-1}"
-ROBOCASA_GRAD_ACC="${ROBOCASA_GRAD_ACC:-1}"
-ROBOCASA_LR="${ROBOCASA_LR:-1e-5}"
-ROBOCASA_WARMUP_STEPS="${ROBOCASA_WARMUP_STEPS:-10}"
-ROBOCASA_BETA1="${ROBOCASA_BETA1:-0.9}"
-ROBOCASA_BETA2="${ROBOCASA_BETA2:-0.95}"
-ROBOCASA_WEIGHT_DECAY="${ROBOCASA_WEIGHT_DECAY:-0.1}"
-ROBOCASA_SAVE_INTERVAL="${ROBOCASA_SAVE_INTERVAL:-1000}"
-ROBOCASA_GC_INTERVAL="${ROBOCASA_GC_INTERVAL:-50}"
-ROBOCASA_CFG_PROB="${ROBOCASA_CFG_PROB:-0.1}"
-ROBOCASA_LOAD_WORKER="${ROBOCASA_LOAD_WORKER:-4}"
-ROBOCASA_DATASET_INIT_WORKER="${ROBOCASA_DATASET_INIT_WORKER:-4}"
-ROBOCASA_DATALOADER_PREFETCH="${ROBOCASA_DATALOADER_PREFETCH:-4}"
-ROBOCASA_PIN_MEMORY="${ROBOCASA_PIN_MEMORY:-1}"
-ROBOCASA_PERSISTENT_WORKERS="${ROBOCASA_PERSISTENT_WORKERS:-1}"
-ROBOCASA_RESUME_FROM="${ROBOCASA_RESUME_FROM:-}"
+ROBOTWIN_ENABLE_SWANLAB="${ROBOTWIN_ENABLE_SWANLAB:-1}"
+ROBOTWIN_NUM_STEPS="${ROBOTWIN_NUM_STEPS:-10000}"
+ROBOTWIN_BATCH_SIZE="${ROBOTWIN_BATCH_SIZE:-1}"
+ROBOTWIN_GRAD_ACC="${ROBOTWIN_GRAD_ACC:-1}"
+ROBOTWIN_LR="${ROBOTWIN_LR:-1e-5}"
+ROBOTWIN_WARMUP_STEPS="${ROBOTWIN_WARMUP_STEPS:-10}"
+ROBOTWIN_BETA1="${ROBOTWIN_BETA1:-0.9}"
+ROBOTWIN_BETA2="${ROBOTWIN_BETA2:-0.95}"
+ROBOTWIN_WEIGHT_DECAY="${ROBOTWIN_WEIGHT_DECAY:-0.1}"
+ROBOTWIN_SAVE_INTERVAL="${ROBOTWIN_SAVE_INTERVAL:-1000}"
+ROBOTWIN_GC_INTERVAL="${ROBOTWIN_GC_INTERVAL:-50}"
+ROBOTWIN_CFG_PROB="${ROBOTWIN_CFG_PROB:-0.1}"
+ROBOTWIN_LOAD_WORKER="${ROBOTWIN_LOAD_WORKER:-16}"
+ROBOTWIN_DATASET_INIT_WORKER="${ROBOTWIN_DATASET_INIT_WORKER:-8}"
+ROBOTWIN_DATALOADER_PREFETCH="${ROBOTWIN_DATALOADER_PREFETCH:-2}"
+ROBOTWIN_PIN_MEMORY="${ROBOTWIN_PIN_MEMORY:-1}"
+ROBOTWIN_PERSISTENT_WORKERS="${ROBOTWIN_PERSISTENT_WORKERS:-1}"
+ROBOTWIN_RESUME_FROM="${ROBOTWIN_RESUME_FROM:-}"
 
 SWANLAB_WORKSPACE="${SWANLAB_WORKSPACE:-Yeziyang}"
-SWANLAB_PROJECT="${SWANLAB_PROJECT:-va_robocasa_target-human-50}"
+SWANLAB_PROJECT="${SWANLAB_PROJECT:-Lingbot-VA-Robotwin-clean50}"
 SWANLAB_API_KEY="${SWANLAB_API_KEY:-fViowdx9CQvjV7ofiP6ET}"
 
 OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
@@ -68,28 +64,27 @@ USE_RDMA="${USE_RDMA:-1}"
 REQUIRE_RDMA="${REQUIRE_RDMA:-0}"
 AUTO_INSTALL_RDMA_DEPS="${AUTO_INSTALL_RDMA_DEPS:-1}"
 RDMA_CREATE_DEVNODES="${RDMA_CREATE_DEVNODES:-1}"
-ROBOCASA_TIMING_LOG="${ROBOCASA_TIMING_LOG:-0}"
-ROBOCASA_TIMING_LOG_EVERY="${ROBOCASA_TIMING_LOG_EVERY:-1}"
-ROBOCASA_TIMING_CONSOLE_EVERY="${ROBOCASA_TIMING_CONSOLE_EVERY:-20}"
-ROBOCASA_TIMING_RANK0_ONLY="${ROBOCASA_TIMING_RANK0_ONLY:-0}"
-ROBOCASA_TIMING_LOG_DIR="${ROBOCASA_TIMING_LOG_DIR:-}"
+NCCL_DEBUG="${NCCL_DEBUG:-INFO}"
+PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}}"
+DRY_RUN="${DRY_RUN:-0}"
 
 usage() {
   cat <<EOF
 Usage:
-  bash script/submit_prepare_train_robocasa_16x4.sh
+  bash script/submit_train_robotwin_8x8_rdma.sh
 
-This is a pure torchrun wrapper with 16x4 defaults.
+This is a pure torchrun wrapper with 8x8 robotwin defaults.
 
 Common overrides:
   SAVE_ROOT=/path/to/output
-  ROBOCASA_RESUME_FROM=/path/to/checkpoint_step_xxx
-  NNODES=16
-  NGPU=4
-  MASTER_PORT=29521
+  ROBOTWIN_RESUME_FROM=/path/to/checkpoint_step_xxx
+  MASTER_ADDR=rank0-hostname
+  MASTER_PORT=29501
+  NNODES=8
+  NGPU=8
 
 Validation:
-  bash script/submit_prepare_train_robocasa_16x4.sh --dry-run
+  bash script/submit_train_robotwin_8x8_rdma.sh --dry-run
 EOF
 }
 
@@ -179,19 +174,39 @@ resolve_python() {
 normalize_resume_from() {
   local resume_path=""
 
-  resume_path="${ROBOCASA_RESUME_FROM}"
+  resume_path="${ROBOTWIN_RESUME_FROM}"
   if [[ -z "${resume_path}" ]]; then
     return 0
   fi
 
   if [[ -f "${resume_path}" ]]; then
     if [[ "${resume_path}" == */transformer/*.safetensors ]]; then
-      ROBOCASA_RESUME_FROM="$(dirname "$(dirname "${resume_path}")")"
+      ROBOTWIN_RESUME_FROM="$(dirname "$(dirname "${resume_path}")")"
     elif [[ "${resume_path}" == */*.safetensors ]]; then
-      ROBOCASA_RESUME_FROM="$(dirname "${resume_path}")"
+      ROBOTWIN_RESUME_FROM="$(dirname "${resume_path}")"
     fi
   elif [[ -d "${resume_path}" && "${resume_path}" == */transformer ]]; then
-    ROBOCASA_RESUME_FROM="$(dirname "${resume_path}")"
+    ROBOTWIN_RESUME_FROM="$(dirname "${resume_path}")"
+  fi
+}
+
+auto_resume_from_latest_checkpoint() {
+  local latest_checkpoint=""
+
+  if [[ -n "${ROBOTWIN_RESUME_FROM}" ]]; then
+    return
+  fi
+
+  if [[ ! -d "${SAVE_ROOT}/checkpoints" ]]; then
+    return
+  fi
+
+  latest_checkpoint="$(
+    find "${SAVE_ROOT}/checkpoints" -maxdepth 1 -type d -name 'checkpoint_step_*' | sort -V | tail -n 1
+  )"
+
+  if [[ -n "${latest_checkpoint}" ]]; then
+    ROBOTWIN_RESUME_FROM="${latest_checkpoint}"
   fi
 }
 
@@ -219,6 +234,11 @@ PY
     return
   fi
 
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "[INFO] Dry run: would execute apt-get install -y librdmacm-dev libibverbs-dev rdma-core infiniband-diags ibverbs-utils"
+    return
+  fi
+
   if [[ "$(id -u)" != "0" || ! -x "$(command -v apt-get 2>/dev/null || true)" ]]; then
     echo "[WARN] RDMA userspace packages appear incomplete, but auto-install is unavailable."
     echo "       need_libibverbs=${missing_ibverbs} need_ibv_devinfo=${missing_tool}"
@@ -231,8 +251,6 @@ PY
   apt-get install -y \
     librdmacm-dev \
     libibverbs-dev \
-    libibverbs1 \
-    ibverbs-providers \
     rdma-core \
     infiniband-diags \
     ibverbs-utils
@@ -240,11 +258,11 @@ PY
 }
 
 detect_active_ib_hcas() {
-  local dev
-  local state_file
-  local layer_file
-  local state
-  local layer
+  local dev=""
+  local state_file=""
+  local layer_file=""
+  local state=""
+  local layer=""
   local -a hcas=()
 
   for dev in /sys/class/infiniband/*; do
@@ -271,8 +289,8 @@ ensure_infiniband_devfs() {
   local dev_path="$1"
   local dev_num="$2"
   local node_type="$3"
-  local major_num
-  local minor_num
+  local major_num=""
+  local minor_num=""
 
   [[ "${RDMA_CREATE_DEVNODES}" == "1" ]] || return 0
   [[ -n "${dev_num}" ]] || return 0
@@ -286,11 +304,12 @@ ensure_infiniband_devfs() {
 }
 
 populate_infiniband_devfs() {
-  local sys_dev
-  local dev_num
-  local name
+  local sys_dev=""
+  local dev_num=""
+  local name=""
 
   [[ "${USE_RDMA}" == "1" ]] || return
+  [[ "${DRY_RUN}" == "1" ]] && return
 
   if [[ -f /sys/class/misc/rdma_cm/dev ]]; then
     dev_num="$(< /sys/class/misc/rdma_cm/dev)"
@@ -315,7 +334,7 @@ populate_infiniband_devfs() {
 log_cuda_env() {
   if command -v nvcc >/dev/null 2>&1; then
     echo "[INFO] nvcc -V"
-    nvcc -V | tail -n 1
+    nvcc -V
   else
     echo "[WARN] nvcc not found in PATH"
   fi
@@ -367,8 +386,11 @@ PY
 setup_rdma_env() {
   local detected_hcas=""
 
+  export NCCL_DEBUG
+
   if [[ "${USE_RDMA}" == "0" ]]; then
     echo "[INFO] USE_RDMA=0, leaving NCCL transport settings unchanged."
+    echo "[INFO] NCCL_DEBUG=${NCCL_DEBUG}"
     return
   fi
 
@@ -376,6 +398,7 @@ setup_rdma_env() {
   populate_infiniband_devfs
 
   if ! check_rdma_runtime; then
+    echo "[INFO] NCCL_DEBUG=${NCCL_DEBUG}"
     return
   fi
 
@@ -383,6 +406,7 @@ setup_rdma_env() {
   if [[ -z "${detected_hcas}" ]]; then
     echo "[WARN] No active InfiniBand HCAs detected under /sys/class/infiniband."
     echo "[WARN] Continuing without forcing NCCL RDMA."
+    echo "[INFO] NCCL_DEBUG=${NCCL_DEBUG}"
     return
   fi
 
@@ -392,10 +416,28 @@ setup_rdma_env() {
   export NCCL_CROSS_NIC="${NCCL_CROSS_NIC:-1}"
 
   echo "[INFO] RDMA enabled for NCCL"
+  echo "       NCCL_DEBUG=${NCCL_DEBUG}"
   echo "       NCCL_IB_DISABLE=${NCCL_IB_DISABLE}"
   echo "       NCCL_IB_HCA=${NCCL_IB_HCA}"
   echo "       NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME}"
   echo "       NCCL_CROSS_NIC=${NCCL_CROSS_NIC}"
+}
+
+ensure_empty_emb() {
+  if [[ -f "${EMPTY_EMB_PATH}" ]]; then
+    return
+  fi
+
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "[INFO] Dry run: would generate empty_emb.pt at ${EMPTY_EMB_PATH}"
+    return
+  fi
+
+  echo "[INFO] empty_emb.pt not found, generating it at ${EMPTY_EMB_PATH}"
+  "${PYTHON_BIN}" "${REPO_ROOT}/script/make_empty_emb.py" \
+    --model-root "${MODEL_ROOT}" \
+    --output "${EMPTY_EMB_PATH}" \
+    --overwrite
 }
 
 validate_config() {
@@ -407,14 +449,10 @@ validate_config() {
     echo "[ERROR] MODEL_ROOT does not exist: ${MODEL_ROOT}"
     exit 1
   }
-  [[ -f "${EMPTY_EMB_PATH}" ]] || {
-    echo "[ERROR] EMPTY_EMB_PATH does not exist: ${EMPTY_EMB_PATH}"
+  if ! find "${DATASET_ROOT}" -path '*/meta/info.json' -print -quit | grep -q .; then
+    echo "[ERROR] DATASET_ROOT does not look like a lerobot latent dataset: ${DATASET_ROOT}"
     exit 1
-  }
-  [[ -f "${STATS_OUTPUT}" ]] || {
-    echo "[ERROR] STATS_OUTPUT does not exist: ${STATS_OUTPUT}"
-    exit 1
-  }
+  fi
   if (( NNODES > 1 )) && [[ "${MASTER_ADDR}" == "127.0.0.1" || "${MASTER_ADDR}" == "localhost" ]]; then
     echo "[ERROR] Failed to infer a usable MASTER_ADDR for multi-node torchrun."
     echo "        Current host: ${HOSTNAME:-$(hostname 2>/dev/null || echo unknown)}"
@@ -425,8 +463,8 @@ validate_config() {
 }
 
 print_summary() {
-  local global_batch
-  global_batch=$((NNODES * NGPU * ROBOCASA_BATCH_SIZE * ROBOCASA_GRAD_ACC))
+  local global_batch=0
+  global_batch=$((NNODES * NGPU * ROBOTWIN_BATCH_SIZE * ROBOTWIN_GRAD_ACC))
 
   echo "[INFO] Torchrun config:"
   echo "       cluster=${NNODES}x${NGPU}"
@@ -435,22 +473,25 @@ print_summary() {
   echo "       master_port=${MASTER_PORT}"
   echo "       dataset=${DATASET_ROOT}"
   echo "       model=${MODEL_ROOT}"
+  echo "       empty_emb=${EMPTY_EMB_PATH}"
   echo "       save_root=${SAVE_ROOT}"
-  echo "       steps=${ROBOCASA_NUM_STEPS}"
-  echo "       lr=${ROBOCASA_LR}"
-  echo "       per_gpu_batch=${ROBOCASA_BATCH_SIZE}"
-  echo "       grad_acc=${ROBOCASA_GRAD_ACC}"
+  echo "       steps=${ROBOTWIN_NUM_STEPS}"
+  echo "       save_interval=${ROBOTWIN_SAVE_INTERVAL}"
+  echo "       lr=${ROBOTWIN_LR}"
+  echo "       per_gpu_batch=${ROBOTWIN_BATCH_SIZE}"
+  echo "       grad_acc=${ROBOTWIN_GRAD_ACC}"
   echo "       global_batch=${global_batch}"
-  echo "       load_worker=${ROBOCASA_LOAD_WORKER}"
-  echo "       timing_log=${ROBOCASA_TIMING_LOG} every=${ROBOCASA_TIMING_LOG_EVERY}"
-  if [[ -n "${ROBOCASA_RESUME_FROM}" ]]; then
-    echo "       resume_from=${ROBOCASA_RESUME_FROM}"
+  echo "       load_worker=${ROBOTWIN_LOAD_WORKER}"
+  if [[ -n "${ROBOTWIN_RESUME_FROM}" ]]; then
+    echo "       resume_from=${ROBOTWIN_RESUME_FROM}"
+  else
+    echo "       resume_from=<none>"
   fi
 }
 
 main() {
-  local -a overrides
-  local -a cmd
+  local -a overrides=()
+  local -a cmd=()
   local has_save_root=0
   local dry_run=0
 
@@ -461,6 +502,7 @@ main() {
         exit 0
         ;;
       --dry-run)
+        DRY_RUN=1
         dry_run=1
         shift
         ;;
@@ -473,29 +515,28 @@ main() {
   autodetect_dist_env
   resolve_python
   normalize_resume_from
+  auto_resume_from_latest_checkpoint
   log_cuda_env
   validate_config
+  ensure_empty_emb
   setup_rdma_env
   print_summary
 
   export PYTHON_BIN NGPU NNODES NODE_RANK MASTER_ADDR MASTER_PORT LOG_RANK
   export TORCHFT_LIGHTHOUSE CONFIG_NAME
   export OMP_NUM_THREADS MKL_NUM_THREADS
-
-  export ROBOCASA_DATASET_PATH="${DATASET_ROOT}"
-  export ROBOCASA_EMPTY_EMB_PATH="${EMPTY_EMB_PATH}"
-  export ROBOCASA_NORM_STATS_PATH="${STATS_OUTPUT}"
-  export ROBOCASA_PRETRAINED_MODEL="${MODEL_ROOT}"
-
-  export ROBOCASA_ENABLE_SWANLAB ROBOCASA_NUM_STEPS ROBOCASA_BATCH_SIZE
-  export ROBOCASA_GRAD_ACC ROBOCASA_LR ROBOCASA_WARMUP_STEPS
-  export ROBOCASA_BETA1 ROBOCASA_BETA2 ROBOCASA_WEIGHT_DECAY
-  export ROBOCASA_SAVE_INTERVAL ROBOCASA_GC_INTERVAL ROBOCASA_CFG_PROB
-  export ROBOCASA_LOAD_WORKER ROBOCASA_DATASET_INIT_WORKER ROBOCASA_DATALOADER_PREFETCH
-  export ROBOCASA_PIN_MEMORY ROBOCASA_PERSISTENT_WORKERS ROBOCASA_RESUME_FROM
-  export ROBOCASA_TIMING_LOG ROBOCASA_TIMING_LOG_EVERY
-  export ROBOCASA_TIMING_CONSOLE_EVERY ROBOCASA_TIMING_RANK0_ONLY ROBOCASA_TIMING_LOG_DIR
   export PYTORCH_ALLOC_CONF PYTORCH_CUDA_ALLOC_CONF
+
+  export ROBOTWIN_DATASET_PATH="${DATASET_ROOT}"
+  export ROBOTWIN_EMPTY_EMB_PATH="${EMPTY_EMB_PATH}"
+  export ROBOTWIN_PRETRAINED_MODEL="${MODEL_ROOT}"
+
+  export ROBOTWIN_ENABLE_SWANLAB ROBOTWIN_NUM_STEPS ROBOTWIN_BATCH_SIZE
+  export ROBOTWIN_GRAD_ACC ROBOTWIN_LR ROBOTWIN_WARMUP_STEPS
+  export ROBOTWIN_BETA1 ROBOTWIN_BETA2 ROBOTWIN_WEIGHT_DECAY
+  export ROBOTWIN_SAVE_INTERVAL ROBOTWIN_GC_INTERVAL ROBOTWIN_CFG_PROB
+  export ROBOTWIN_LOAD_WORKER ROBOTWIN_DATASET_INIT_WORKER ROBOTWIN_DATALOADER_PREFETCH
+  export ROBOTWIN_PIN_MEMORY ROBOTWIN_PERSISTENT_WORKERS ROBOTWIN_RESUME_FROM
 
   export SWANLAB_WORKSPACE SWANLAB_PROJECT SWANLAB_API_KEY
 
@@ -509,7 +550,7 @@ main() {
 
   cmd=(
     bash
-    "${REPO_ROOT}/script/run_va_posttrain_robocasa.sh"
+    "${REPO_ROOT}/script/run_va_posttrain.sh"
   )
   if (( has_save_root == 0 )); then
     cmd+=(--save-root "${SAVE_ROOT}")
